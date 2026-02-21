@@ -1,0 +1,4 @@
+openai>=1.50.0
+mattermostdriver>=7.3.2
+schedule>=1.2.0
+python-dotenv>=1.0.0

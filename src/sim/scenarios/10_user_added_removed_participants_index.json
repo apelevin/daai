@@ -1,0 +1,15 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "newbie", "display_name": "New Person"}
+  ],
+  "seed_files": [
+    {"path": "participants/index.json", "content": "{\"participants\": []}"}
+  ],
+  "router_rules": [],
+  "cheap_rules": [],
+  "heavy_rules": [],
+  "steps": [
+    {"type": "user_added", "user_id": "u1"},
+    {"type": "user_removed", "user_id": "u1"}
+  ]
+}

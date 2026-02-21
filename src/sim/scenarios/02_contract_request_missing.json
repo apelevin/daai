@@ -1,0 +1,23 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "techacc_iit", "display_name": "Tech Acc"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": []}"}
+  ],
+  "router_rules": [
+    {
+      "match": "Покажи контракт по WIN NI",
+      "response": {"type": "contract_request", "entity": "win_ni", "load_files": ["contracts/win_ni.md"], "model": "cheap"}
+    }
+  ],
+  "cheap_rules": [
+    {
+      "match": "Покажи контракт по WIN NI",
+      "response": "Контракт WIN NI не найден. Могу начать согласование — напиши: 'Начни согласование WIN NI'."
+    }
+  ],
+  "steps": [
+    {"type": "posted", "id": "p1", "user_id": "u1", "message": "Покажи контракт по WIN NI"}
+  ]
+}

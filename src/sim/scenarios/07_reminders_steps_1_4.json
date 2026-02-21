@@ -1,0 +1,17 @@
+{
+  "users": [
+    {"user_id": "u2", "username": "dd_lead", "display_name": "DD Lead"},
+    {"user_id": "u3", "username": "controller", "display_name": "Controller"}
+  ],
+  "seed_files": [
+    {"path": "prompts/reminder_templates.md", "content": "(templates placeholder)"},
+    {"path": "tasks/reminders.json", "content": "{\"reminders\":[{\"id\":\"rem_001\",\"contract_id\":\"win_ni\",\"target_user\":\"dd_lead\",\"target_mm_user_id\":\"u2\",\"thread_id\":\"thread_123\",\"question_summary\":\"Выбираем A или B?\",\"first_asked\":\"2026-02-18T09:00:00+00:00\",\"last_reminder\":\"2026-02-19T09:00:00+00:00\",\"escalation_step\":1,\"next_reminder\":\"2000-01-01T00:00:00+00:00\"}]}"},
+    {"path": "drafts/win_ni_discussion.json", "content": "{\"proposed_resolution\": \"Variant A (CRM signed)\"}"}
+  ],
+  "router_rules": [],
+  "cheap_rules": [
+    {"match": "Сформулируй два простых варианта", "response": "A — CRM signed\nB — DDP invoices"}
+  ],
+  "heavy_rules": [],
+  "steps": []
+}

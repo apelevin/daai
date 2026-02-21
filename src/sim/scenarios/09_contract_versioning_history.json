@@ -1,0 +1,21 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "sales_lead", "display_name": "Sales Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": []}"}
+  ],
+  "router_rules": [
+    {"match": "Сохрани v1", "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": [], "model": "heavy"}},
+    {"match": "Сохрани v2", "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": [], "model": "heavy"}}
+  ],
+  "heavy_rules": [
+    {"match": "Сохрани v1", "match_in": "tail", "response": "[SAVE_CONTRACT:win_ni]\n# Data Contract: WIN NI\n\nv1\n[/SAVE_CONTRACT]"},
+    {"match": "Сохрани v2", "match_in": "tail", "response": "[SAVE_CONTRACT:win_ni]\n# Data Contract: WIN NI\n\nv2\n[/SAVE_CONTRACT]"}
+  ],
+  "steps": [
+    {"type": "posted", "id": "r1", "user_id": "u1", "message": "Сохрани v1"},
+    {"type": "posted", "id": "r2", "user_id": "u1", "message": "Сохрани v2"},
+    {"type": "posted", "id": "r3", "user_id": "u1", "message": "история контракта win_ni"}
+  ]
+}

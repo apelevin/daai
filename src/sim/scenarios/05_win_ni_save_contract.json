@@ -1,0 +1,23 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "sales_lead", "display_name": "Sales Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": []}"}
+  ],
+  "router_rules": [
+    {
+      "match": "Фиксируем вариант A",
+      "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": [], "model": "heavy"}
+    }
+  ],
+  "heavy_rules": [
+    {
+      "match": "Фиксируем вариант A",
+      "response": "✅ Data Contract: WIN NI — согласован\n\n[SAVE_CONTRACT:win_ni]\n# Data Contract: WIN NI\n\n## Статус\nСогласован\n\n## Определение\nWIN NI — сумма новых продаж по подписанным контрактам текущего квартала, валидированным в CRM.\n\n## Формула\nSUM(amount) WHERE signed_at in quarter AND is_new_sale = true\n\n## Источник данных\nCRM\n\n## Исключения\nОтменённые, неподписанные, barter.\n\n## Согласовано\n@sales_lead — 2026-02-19\n[/SAVE_CONTRACT]\n\n[SAVE_DECISION]\n{\"contract\": \"win_ni\", \"decision\": \"Variant A (CRM signed contracts)\", \"method\": \"consent\"}\n[/SAVE_DECISION]"
+    }
+  ],
+  "steps": [
+    {"type": "posted", "id": "root", "user_id": "u1", "message": "Фиксируем вариант A"}
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "sales_lead", "display_name": "Sales Lead"},
+    {"user_id": "u2", "username": "dd_lead", "display_name": "DD Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": []}"}
+  ],
+  "router_rules": [
+    {
+      "match": "Начни согласование",
+      "response": {"type": "new_contract_init", "entity": "win_ni", "load_files": [], "model": "heavy"}
+    },
+    {
+      "match": "позиция",
+      "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": [], "model": "heavy"}
+    }
+  ],
+  "heavy_rules": [
+    {
+      "match": "Начни согласование",
+      "response": "📋 Data Contract: WIN NI\nСтатус: черновик\n@sales_lead @dd_lead — задам 3 вопроса.\n1) Что вы считаете WIN NI?\n2) Источник данных?\n3) Исключения?"
+    },
+    {
+      "match": "позиция #1",
+      "response": "✅ Зафиксировал позицию #1 (CRM signed). Жду позицию #2."
+    },
+    {
+      "match": "позиция #2",
+      "response": "Есть расхождение.\nA) WIN NI = подписанные контракты (CRM).\nB) WIN NI = выставленные инвойсы (DDP).\nВыберите A или B.\n[UPDATE_DISCUSSION:win_ni_contract]\n{\"positions\": {\"a\": \"crm_signed\", \"b\": \"ddp_invoices\"}, \"need_choice\": true}\n[/UPDATE_DISCUSSION]"
+    }
+  ],
+  "steps": [
+    {"type": "posted", "id": "root", "user_id": "u1", "message": "Начни согласование Data Contract для WIN NI"},
+    {"type": "posted", "user_id": "u1", "root_ref": "root", "message": "Моя позиция #1: ... (позиция #1)"},
+    {"type": "posted", "user_id": "u2", "root_ref": "root", "message": "Моя позиция #2: ... (позиция #2)"}
+  ]
+}

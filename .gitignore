@@ -1,0 +1,12 @@
+.env
+env.local
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+contracts/
+drafts/
+participants/
+memory/
+tasks/

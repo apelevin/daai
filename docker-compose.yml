@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  agent:
+    build: .
+    env_file: .env
+    volumes:
+      - ./prompts:/app/prompts:ro
+      - ./context:/app/context:ro
+      - ./contracts:/app/contracts
+      - ./drafts:/app/drafts
+      - ./participants:/app/participants
+      - ./memory:/app/memory
+      - ./tasks:/app/tasks
+    restart: unless-stopped

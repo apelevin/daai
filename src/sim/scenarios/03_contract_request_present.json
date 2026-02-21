@@ -1,0 +1,24 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "techacc_iit", "display_name": "Tech Acc"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\":[{\"id\":\"win_ni\",\"name\":\"WIN NI\",\"status\":\"agreed\",\"file\":\"contracts/win_ni.md\"}]}"},
+    {"path": "contracts/win_ni.md", "content": "# Data Contract: WIN NI\n\nОпределение: ...\nФормула: ...\n"}
+  ],
+  "router_rules": [
+    {
+      "match": "Покажи контракт по WIN NI",
+      "response": {"type": "contract_request", "entity": "win_ni", "load_files": ["contracts/win_ni.md"], "model": "cheap"}
+    }
+  ],
+  "cheap_rules": [
+    {
+      "match": "Покажи контракт по WIN NI",
+      "response": "# Data Contract: WIN NI\n\nОпределение: ...\nФормула: ..."
+    }
+  ],
+  "steps": [
+    {"type": "posted", "id": "p1", "user_id": "u1", "message": "Покажи контракт по WIN NI"}
+  ]
+}

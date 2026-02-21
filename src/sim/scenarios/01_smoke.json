@@ -1,0 +1,35 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "techacc_iit", "display_name": "Tech Acc"},
+    {"user_id": "u2", "username": "pelevin", "display_name": "Алексей"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": []}"}
+  ],
+  "router_rules": [
+    {
+      "match": "Покажи все контракты",
+      "response": {"type": "status_request", "entity": null, "load_files": ["contracts/index.json"], "model": "cheap"}
+    },
+    {
+      "match": "Привет",
+      "response": {"type": "general_question", "entity": null, "load_files": [], "model": "heavy"}
+    }
+  ],
+  "cheap_rules": [
+    {
+      "match": "Покажи все контракты",
+      "response": "Контрактов пока нет (пустой индекс)."
+    }
+  ],
+  "heavy_rules": [
+    {
+      "match": "Привет",
+      "response": "Привет! Я AI-архитектор метрик. Могу показать статусы контрактов или начать согласование."
+    }
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "Привет"},
+    {"type": "posted", "user_id": "u1", "message": "Покажи все контракты"}
+  ]
+}
