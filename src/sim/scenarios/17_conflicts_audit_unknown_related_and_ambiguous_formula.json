@@ -1,0 +1,12 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "dd_lead", "display_name": "Data Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": [\n      {\"id\": \"win_ni\", \"name\": \"WIN NI\", \"status\": \"agreed\", \"file\": \"contracts/win_ni.md\"}\n    ]}"},
+    {"path": "contracts/win_ni.md", "content": "# Data Contract: WIN NI\n\n## Определение\nWIN NI — ...\n\n## Формула\nЧеловеческая: примерно считаем продажи\nПсевдо-SQL: SELECT 1\n\n## Источник данных\nCRM\n\n## Связь с Extra Time\nWIN NI → New Clients → MAU → Extra Time\n\n## Связанные контракты\n- dim_customer\n- win_ni\n"}
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "аудит конфликтов"}
+  ]
+}

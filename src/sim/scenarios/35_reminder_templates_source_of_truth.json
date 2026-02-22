@@ -1,0 +1,17 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "sales_lead", "display_name": "Sales Lead"},
+    {"user_id": "u2", "username": "controller", "display_name": "Controller"}
+  ],
+  "seed_files": [
+    {
+      "path": "tasks/reminders.json",
+      "content": "{\"reminders\":[{\n        \"contract_id\":\"win_ni\",\n        \"target_user\":\"sales_lead\",\n        \"target_mm_user_id\":\"u1\",\n        \"thread_id\":\"thread-123\",\n        \"question_summary\":\"Когда фиксируем WIN NI — подписание или оплата?\",\n        \"first_asked\":\"2026-02-01T00:00:00+00:00\",\n        \"next_reminder\":\"2000-01-01T00:00:00+00:00\",\n        \"escalation_step\":1\n      }]}"
+    },
+    {
+      "path": "prompts/reminder_templates.md",
+      "content": "# Reminder Templates\n\nMAGIC_TEMPLATE_123\n\n{SOFT_REMINDER}\n"
+    }
+  ],
+  "cheap_rules": []
+}

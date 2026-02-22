@@ -34,10 +34,26 @@ def main():
     data_dir = Path(tempfile.mkdtemp(prefix="daai-sim-"))
     os.environ["DATA_DIR"] = str(data_dir)
 
-    # Seed minimal prompts/router prompt
+    # Seed prompts.
+    # Prefer real repo prompts if present; fall back to minimal stubs.
+    repo_root = Path(__file__).resolve().parents[2]
+
+    def seed_prompt(rel: str, fallback: str):
+        src = repo_root / rel
+        if src.exists():
+            write_file(data_dir, rel, src.read_text(encoding="utf-8"))
+        else:
+            write_file(data_dir, rel, fallback)
+
+    # Router prompt must stay minimal in simulation so FakeLLMClient can detect it reliably.
     write_file(data_dir, "prompts/router.md", "Классифицируй сообщение. Верни только JSON, ничего больше.")
-    write_file(data_dir, "prompts/system_short.md", "Ты — AI-архитектор метрик. Отвечай кратко.")
-    write_file(data_dir, "prompts/system_full.md", "Ты — AI-архитектор метрик. Следуй правилам. Не больше 3 вопросов.")
+
+    # System prompts: prefer real repo prompts if present.
+    seed_prompt("prompts/system_short.md", "Ты — AI-архитектор метрик. Отвечай кратко.")
+    seed_prompt("prompts/system_full.md", "Ты — AI-архитектор метрик. Следуй правилам. Не больше 3 вопросов.")
+
+    seed_prompt("prompts/reminder_templates.md", "")
+    seed_prompt("prompts/digest_template.md", "")
 
     # Seed any files from scenario
     for f in sc.get("seed_files", []):
@@ -46,8 +62,24 @@ def main():
     mm = FakeMattermostClient(channel_id="data-contracts", bot_user_id="bot")
 
     # Register users
-    for u in sc.get("users", []):
+    users = sc.get("users", [])
+    for u in users:
         mm.register_user(user_id=u["user_id"], username=u["username"], display_name=u.get("display_name", ""))
+
+    # By default, simulation assumes users are already onboarded to avoid noisy DM onboarding
+    # in scenarios that focus on contract/analysis flows. Override with:
+    #   "auto_onboard": false
+    # or set per-user with {"onboarded": false}.
+    auto_onboard = sc.get("auto_onboard", True)
+    if auto_onboard:
+        participants = []
+        for u in users:
+            uname = u.get("username")
+            if not uname:
+                continue
+            onboarded = u.get("onboarded", True)
+            participants.append({"username": uname, "active": True, "onboarded": bool(onboarded)})
+        write_file(data_dir, "participants/index.json", json.dumps({"participants": participants}, ensure_ascii=False, indent=2))
 
     llm = FakeLLMClient(
         router_rules=sc.get("router_rules", []),

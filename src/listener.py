@@ -137,7 +137,13 @@ class Listener:
             except Exception:
                 existing_profile = None
 
-            if not existing_profile:
+            already_onboarded = False
+            try:
+                already_onboarded = self.agent.memory.is_participant_onboarded(username)
+            except Exception:
+                already_onboarded = False
+
+            if (not existing_profile) and (not already_onboarded):
                 try:
                     user_info = self.mm.get_user_info(user_id)
                     self.agent.onboard_participant(
@@ -159,6 +165,8 @@ class Listener:
                         ("?" in message)
                         or any(k in low for k in [
                             "контракт", "статус", "начни", "покажи", "очеред", "план", "расхожд", "проблем",
+                            "сохрани", "сохран", "зафикс", "обнов", "создай", "создать",
+                            "аудит", "конфликт", "проверь",
                             "reminder", "дайджест", "digest",
                         ])
                     )

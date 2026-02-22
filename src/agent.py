@@ -4,6 +4,20 @@ import re
 from datetime import datetime, timezone
 
 from src.router import route
+from src.validator import validate_contract
+from src.metrics_tree import mark_contract_agreed
+from src.analyzer import MetricsAnalyzer, render_conflicts
+from src.glossary import check_ambiguity
+from src.relationships import detect_mentions, upsert_relationships
+from src.relationships_llm import build_prompt as build_relationships_prompt, parse_and_validate as parse_relationships_llm
+from src.governance import (
+    find_contracts_requiring_review,
+    render_review_report,
+    ApprovalPolicy,
+    check_approval_policy,
+)
+from src.lifecycle import set_status, ensure_in_review
+
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +106,18 @@ class Agent:
         # keep channel type for side-effect policy
         route_data["channel_type"] = channel_type
 
+        # Lifecycle MVP: when a contract enters discussion/init, auto move draft->in_review
+        try:
+            if route_data.get("type") in {"new_contract_init", "contract_discussion", "problem_report"}:
+                cid = (route_data.get("entity") or "").strip().lower()
+                if cid:
+                    index = self.memory.read_json("contracts/index.json") or {"contracts": []}
+                    res = ensure_in_review(index, cid)
+                    if res.ok and res.changed:
+                        self.memory.write_json("contracts/index.json", index)
+        except Exception:
+            pass
+
         # Fast-path: contract history/version rendering without LLM
         if route_data.get("type") == "contract_history":
             cid = route_data.get("entity")
@@ -116,6 +142,129 @@ class Agent:
             if not md:
                 return f"Версия не найдена: `{cid}` `{ts}`"
             return f"Версия `{cid}` `{ts}`:\n\n```markdown\n{md}\n```"
+
+        if route_data.get("type") == "conflicts_audit":
+            analyzer = MetricsAnalyzer(self.memory)
+            conflicts = analyzer.detect_conflicts()
+            return render_conflicts(conflicts)
+
+        if route_data.get("type") == "relationships_show":
+            cid = (route_data.get("entity") or "").strip().lower()
+            idx = self.memory.read_json("contracts/relationships.json") or {"relationships": []}
+            items = idx.get("relationships") if isinstance(idx, dict) else []
+            if not isinstance(items, list):
+                items = []
+
+            # Build id->name map
+            name_map = {}
+            for c in (self.memory.list_contracts() or []):
+                if isinstance(c, dict) and c.get("id"):
+                    name_map[str(c.get("id")).lower()] = c.get("name") or c.get("id")
+
+            rels = [r for r in items if isinstance(r, dict) and (str(r.get("from") or "").lower()==cid or str(r.get("to") or "").lower()==cid)]
+            if not rels:
+                return f"Связей для `{cid}` не найдено."
+
+            title = name_map.get(cid, cid)
+            lines = [f"🔗 Связи для `{cid}` ({title}):", ""]
+            for r in rels[:30]:
+                f = str(r.get("from") or "").lower()
+                t = str(r.get("to") or "").lower()
+                ty = str(r.get("type") or "")
+                desc = (r.get("description") or "").strip()
+
+                arrow = "→"
+                if ty == "inverse":
+                    arrow = "↔"
+                lines.append(f"- `{f}` {arrow} `{t}` — **{ty}**" + (f" — {desc}" if desc else ""))
+
+            if len(rels) > 30:
+                lines.append(f"…и ещё {len(rels)-30}")
+
+            return "\n".join(lines)
+
+        if route_data.get("type") == "governance_review_audit":
+            items = find_contracts_requiring_review(self.memory.list_contracts())
+            return render_review_report(items)
+
+        if route_data.get("type") == "governance_policy_show":
+            tier_key = (route_data.get("entity") or "").strip().lower()
+            gov = self.memory.read_json("context/governance.json") or {}
+            tiers = gov.get("tiers") if isinstance(gov, dict) else None
+            if not isinstance(tiers, dict) or tier_key not in tiers:
+                return f"Политика `{tier_key}` не найдена."
+            cfg = tiers.get(tier_key) or {}
+            req = cfg.get("approval_required") or []
+            thr = cfg.get("consensus_threshold")
+            desc = cfg.get("description") or ""
+
+            roles = self.memory.read_json("context/roles.json") or {}
+            roles_dict = roles.get("roles") if isinstance(roles, dict) else None
+
+            lines = [f"📜 Политика согласования {tier_key}", ""]
+            if desc:
+                lines.append(desc)
+                lines.append("")
+            lines.append(f"Требуемые роли: {', '.join(req) if req else '(нет)'}")
+            lines.append(f"Порог консенсуса: {thr}")
+            lines.append("")
+            if isinstance(roles_dict, dict):
+                lines.append("Текущее назначение пользователей на роли:")
+                for role in req:
+                    users = roles_dict.get(role) or []
+                    if isinstance(users, list):
+                        u = ", ".join([f"@{x}" for x in users if isinstance(x, str)])
+                        lines.append(f"- {role}: {u or '(не назначено)'}")
+            return "\n".join(lines)
+
+        if route_data.get("type") == "governance_requirements_for":
+            cid = (route_data.get("entity") or "").strip().lower()
+            tier_key = "tier_2"
+            for c in (self.memory.list_contracts() or []):
+                if isinstance(c, dict) and str(c.get("id") or "").lower() == cid and c.get("tier"):
+                    tier_key = str(c.get("tier"))
+                    break
+
+            gov = self.memory.read_json("context/governance.json") or {}
+            tiers = gov.get("tiers") if isinstance(gov, dict) else None
+            cfg = tiers.get(tier_key) if isinstance(tiers, dict) else None
+            if not isinstance(cfg, dict):
+                return f"Не нашёл политику для `{cid}` (tier={tier_key})."
+
+            req = cfg.get("approval_required") or []
+            thr = cfg.get("consensus_threshold")
+            desc = cfg.get("description") or ""
+            lines = [f"✅ Требования согласования для `{cid}` (tier={tier_key})", ""]
+            if desc:
+                lines.append(desc)
+                lines.append("")
+            lines.append(f"Роли: {', '.join(req) if req else '(нет)'}")
+            lines.append(f"Порог: {thr}")
+            lines.append("\nПодсказка: добавь согласующих в секцию `## Согласовано` как `@username — дата`.")
+            return "\n".join(lines)
+
+        if route_data.get("type") == "lifecycle_get_status":
+            cid = (route_data.get("entity") or "").strip().lower()
+            status = None
+            for c in (self.memory.list_contracts() or []):
+                if isinstance(c, dict) and str(c.get("id") or "").lower() == cid:
+                    status = c.get("status")
+                    break
+            if not status:
+                return f"Статус для `{cid}` не найден."
+            return f"Статус `{cid}`: **{status}**"
+
+        if route_data.get("type") == "lifecycle_set_status":
+            ent = (route_data.get("entity") or "")
+            if ":" not in ent:
+                return "Неверный формат. Используй: `поставь статус <id> <draft|in_review|approved|active|deprecated|archived>`"
+            cid, st = ent.split(":", 1)
+            index = self.memory.read_json("contracts/index.json") or {"contracts": []}
+            res = set_status(index, cid, st)
+            if not res.ok:
+                return f"Не получилось: {res.message}"
+            self.memory.write_json("contracts/index.json", index)
+            return f"✅ {cid}: статус теперь **{st}**"
 
         # 2. Load system prompt
         if route_data["model"] == "cheap":
@@ -165,6 +314,7 @@ class Agent:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         try:
             self.memory.set_participant_active(username, True)
+            self.memory.set_participant_onboarded(username, True)
         except Exception:
             # best-effort
             pass
@@ -233,15 +383,139 @@ class Agent:
                 # Strip the side-effect block but do not execute
                 reply = reply.replace(match.group(0), "")
                 continue
+
             contract_id, content = match.group(1), match.group(2).strip()
+
+            report = validate_contract(content)
+            if not report.ok:
+                # Do not save; return actionable feedback
+                reply = reply.replace(match.group(0), "")
+                bullets = "\n".join([f"- {i.message}" for i in report.issues[:12]])
+                more = "" if len(report.issues) <= 12 else f"\n- …и ещё {len(report.issues)-12}"
+                return (
+                    "⚠️ Контракт не сохраняю: он не проходит валидацию.\n\n"
+                    "Что поправить:\n"
+                    f"{bullets}{more}\n\n"
+                    "После правок напиши: «сохрани финальную версию» или «зафиксируй контракт»."
+                ).strip()
+
+            # Governance tier approvals (MVP): if governance.json declares required roles for this tier,
+            # enforce that the approvers listed in "## Согласовано" include all required roles for tier_1.
+            try:
+                gov = self.memory.read_json("context/governance.json") or {}
+                tiers = (gov.get("tiers") or {}) if isinstance(gov, dict) else {}
+                tier_key = "tier_2"  # default
+
+                # allow explicit tier in index.json record if present
+                idx_items = self.memory.list_contracts() or []
+                for c in idx_items:
+                    if isinstance(c, dict) and str(c.get("id") or "").lower() == contract_id.lower() and c.get("tier"):
+                        tier_key = str(c.get("tier"))
+                        break
+
+                tier_cfg = tiers.get(tier_key) if isinstance(tiers, dict) else None
+                if isinstance(tier_cfg, dict):
+                    policy = ApprovalPolicy(
+                        tier=tier_key,
+                        approval_required=list(tier_cfg.get("approval_required") or []),
+                        consensus_threshold=float(tier_cfg.get("consensus_threshold") or 1.0),
+                    )
+
+                    roles = self.memory.read_json("context/roles.json") or {}
+                    role_map = {}
+                    roles_dict = roles.get("roles") if isinstance(roles, dict) else None
+                    if isinstance(roles_dict, dict):
+                        for role, users in roles_dict.items():
+                            if isinstance(users, list):
+                                for u in users:
+                                    if isinstance(u, str):
+                                        role_map[u.lower()] = str(role)
+
+                    check = check_approval_policy(contract_md=content, policy=policy, role_map=role_map)
+                    if not check.ok:
+                        missing = ", ".join(check.missing_roles) or "(неизвестно)"
+                        reply = reply.replace(match.group(0), "")
+                        return (
+                            f"⚠️ Контракт не сохраняю: не выполнена политика согласования ({tier_key}).\n\n"
+                            f"Не хватает ролей: {missing}.\n"
+                            "Добавь нужных согласующих в секцию «## Согласовано», затем повтори: «зафиксируй контракт»."
+                        ).strip()
+            except Exception:
+                pass
+
+            # Glossary ambiguity check (best-effort): block save until clarified
+            try:
+                glossary = self.memory.read_json("context/glossary.json")
+                issues = check_ambiguity(content, glossary)
+                if issues:
+                    reply = reply.replace(match.group(0), "")
+                    bullets = "\n".join([f"- {i.message}" for i in issues])
+                    return (
+                        "⚠️ Контракт не сохраняю: нужно уточнение терминов по глоссарию.\n\n"
+                        f"{bullets}\n\n"
+                        "Ответь в треде, и я обновлю текст (или ты обновишь вручную, затем: «зафиксируй контракт»)."
+                    ).strip()
+            except Exception:
+                # If glossary missing/invalid, do not block
+                pass
+
             self.memory.save_contract(contract_id, content)
             name = _extract_contract_name(content) or contract_id
+
+            # Best-effort: detect and store relationships
+            try:
+                known_contracts = self.memory.list_contracts() or []
+                known_ids = [c.get("id") for c in known_contracts if isinstance(c, dict) and c.get("id")]
+
+                # (a) deterministic mentions by id
+                rels = detect_mentions(contract_id=contract_id, contract_md=content, known_contract_ids=known_ids)
+
+                # (b) LLM-assisted semantic relationships
+                try:
+                    system, user = build_relationships_prompt(contract_id=contract_id, contract_md=content, known_contracts=known_contracts)
+                    raw = self.llm.call_heavy(system, user)
+                    parsed = parse_relationships_llm(raw, contract_id=contract_id, known_ids=set([x for x in known_ids if isinstance(x, str)]))
+                    for p in parsed:
+                        rels.append(p)  # type: ignore
+                except Exception as e:
+                    logger.info("Relationships LLM skipped/failed: %s", e)
+
+                if rels:
+                    idx = self.memory.read_json("contracts/relationships.json") or {"relationships": []}
+                    # rels may contain both Relationship and ProposedRelationship; normalize
+                    normalized = []
+                    for r in rels:
+                        if hasattr(r, "from_id"):
+                            normalized.append(r)
+                        else:
+                            # unknown type
+                            pass
+
+                    idx2, added = upsert_relationships(idx, normalized)  # type: ignore
+                    if added:
+                        self.memory.write_json("contracts/relationships.json", idx2)
+                        logger.info("Relationships updated: +%d", added)
+            except Exception as e:
+                logger.warning("Failed to update relationships.json: %s", e)
             self.memory.update_contract_index(contract_id, {
                 "name": name,
                 "status": "agreed",
                 "file": f"contracts/{contract_id}.md",
                 "agreed_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             })
+
+            # Best-effort: mark the corresponding node in metrics_tree.md as agreed
+            try:
+                tree_text = self.memory.read_file("context/metrics_tree.md") or ""
+                patch = mark_contract_agreed(tree_text, name)
+                if not patch.ok:
+                    patch = mark_contract_agreed(tree_text, contract_id)
+                if patch.ok and patch.changed:
+                    self.memory.write_file("context/metrics_tree.md", patch.new_text)
+                    logger.info("Metrics tree updated: %s", patch.message)
+            except Exception as e:
+                logger.warning("Failed to update metrics_tree.md: %s", e)
+
             logger.info("Saved contract: %s", contract_id)
             reply = reply.replace(match.group(0), "")
 

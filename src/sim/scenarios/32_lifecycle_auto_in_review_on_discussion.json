@@ -1,0 +1,20 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "dd_lead", "display_name": "Data Lead"}
+  ],
+  "seed_files": [
+    {"path": "participants/dd_lead.md", "content": "# Data Lead (@dd_lead)\n\n(ready)\n"},
+    {"path": "participants/index.json", "content": "{\"participants\":[{\"username\":\"dd_lead\",\"active\":true}]}"},
+
+    {"path": "contracts/index.json", "content": "{\"contracts\":[{\"id\":\"win_ni\",\"name\":\"WIN NI\",\"status\":\"draft\"}]}"}
+  ],
+  "router_rules": [
+    {"match": "начни обсуждение win_ni", "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": ["contracts/index.json"], "model": "heavy"}}
+  ],
+  "heavy_rules": [
+    {"match": "начни обсуждение win_ni", "match_in": "tail", "response": "Ок, обсуждаем WIN NI."}
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "начни обсуждение win_ni"}
+  ]
+}

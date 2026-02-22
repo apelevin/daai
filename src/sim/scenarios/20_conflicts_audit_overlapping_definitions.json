@@ -1,0 +1,13 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "dd_lead", "display_name": "Data Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": [\n      {\"id\": \"new_clients\", \"name\": \"New Clients\", \"status\": \"agreed\", \"file\": \"contracts/new_clients.md\"},\n      {\"id\": \"acquisition\", \"name\": \"Acquisition\", \"status\": \"agreed\", \"file\": \"contracts/acquisition.md\"}\n    ]}"},
+    {"path": "contracts/new_clients.md", "content": "# Data Contract: New Clients\n\n## Определение\nКоличество новых клиентов за период: юридические лица, впервые подписавшие контракт и оплатившие первый инвойс в текущем квартале.\n\n## Формула\nЧеловеческая: считаем новых клиентов\nПсевдо-SQL: SELECT count(distinct customer_id)\n\n## Источник данных\nCRM\n\n## Связь с Extra Time\nNew Clients → MAU → Extra Time\n"},
+    {"path": "contracts/acquisition.md", "content": "# Data Contract: Acquisition\n\n## Определение\nЧисло новых клиентов в периоде: компании, которые впервые подписали контракт и оплатили первый счёт в данном квартале.\n\n## Формула\nЧеловеческая: считаем\nПсевдо-SQL: SELECT count(distinct customer_id)\n\n## Источник данных\nCRM\n\n## Связь с Extra Time\nAcquisition → MAU → Extra Time\n"}
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "аудит конфликтов"}
+  ]
+}

@@ -29,6 +29,38 @@ def route(llm_client, memory, username: str, message: str,
         ts = m.group(3)
         return {"type": "contract_version", "entity": f"{cid}:{ts}", "load_files": [], "model": "cheap"}
 
+    m = re.search(r"\b(аудит|проверь)\s+конфликт(ы|ов)?\b", message, re.IGNORECASE)
+    if m:
+        return {"type": "conflicts_audit", "entity": None, "load_files": ["contracts/index.json"], "model": "cheap"}
+
+    m = re.search(r"\bпокажи\s+связи\s+([a-z0-9_\-]+)\b", message, re.IGNORECASE)
+    if m:
+        cid = m.group(1).lower()
+        return {"type": "relationships_show", "entity": cid, "load_files": ["contracts/relationships.json", "contracts/index.json"], "model": "cheap"}
+
+    m = re.search(r"\b(контракты\s+на\s+пересмотр|аудит\s+пересмотра|проверь\s+пересмотр)\b", message, re.IGNORECASE)
+    if m:
+        return {"type": "governance_review_audit", "entity": None, "load_files": ["contracts/index.json"], "model": "cheap"}
+
+    m = re.search(r"\bпокажи\s+политику\s+(tier_[123])\b", message, re.IGNORECASE)
+    if m:
+        return {"type": "governance_policy_show", "entity": m.group(1).lower(), "load_files": ["context/governance.json", "context/roles.json"], "model": "cheap"}
+
+    m = re.search(r"\bкакие\s+роли\s+нужны\s+для\s+([a-z0-9_\-]+)\b", message, re.IGNORECASE)
+    if m:
+        return {"type": "governance_requirements_for", "entity": m.group(1).lower(), "load_files": ["context/governance.json", "context/roles.json", "contracts/index.json"], "model": "cheap"}
+
+    m = re.search(r"\b(переведи|поставь)\s+статус\s+([a-z0-9_\-]+)\s+(draft|in_review|approved|active|deprecated|archived)\b", message, re.IGNORECASE)
+    if m:
+        cid = m.group(2).lower()
+        st = m.group(3).lower()
+        return {"type": "lifecycle_set_status", "entity": f"{cid}:{st}", "load_files": ["contracts/index.json"], "model": "cheap"}
+
+    m = re.search(r"\bкакой\s+статус\s+([a-z0-9_\-]+)\b", message, re.IGNORECASE)
+    if m:
+        cid = m.group(1).lower()
+        return {"type": "lifecycle_get_status", "entity": cid, "load_files": ["contracts/index.json"], "model": "cheap"}
+
     router_prompt = memory.read_file("prompts/router.md") or ""
 
     user_input = (

@@ -1,0 +1,22 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "sales_lead", "display_name": "Sales Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": []}"},
+    {"path": "context/glossary.json", "content": "{\"terms\":[{\"canonical\":\"Клиент\",\"aliases\":[\"клиент\",\"customer\"],\"disambiguation\":{\"Юрлицо\":[\"юридическое лицо\",\"юрлицо\"],\"Пользователь\":[\"пользователь\"]}}]}"}
+  ],
+  "router_rules": [
+    {"match": "зафиксируй контракт", "response": {"type": "contract_discussion", "entity": "dim_customer", "load_files": ["context/glossary.json"], "model": "heavy"}}
+  ],
+  "heavy_rules": [
+    {
+      "match": "зафиксируй контракт",
+      "match_in": "tail",
+      "response": "[SAVE_CONTRACT:dim_customer]\n# Data Contract: dim_customer\n\n## Статус\nApproved\n\n## Определение\nКлиент — сущность в аналитике.\n\n## Формула\nЧеловеческая: определяем клиента\nПсевдо-SQL: SELECT 1\n\n## Источник данных\nCRM\n\n## Включает\n...\n\n## Исключения\n...\n\n## Гранулярность\n...\n\n## Ответственный за данные\n- CRM: @sales_lead\n\n## Ответственный за расчёт\n@sales_lead\n\n## Связь с Extra Time\ndim_customer → MAU → Extra Time\n\n## Потребители\n...\n\n## Состояние данных\n...\n\n## Известные проблемы\n...\n\n## Связанные контракты\n- win_ni\n\n## Согласовано\n@sales_lead — 2026-02-20\n\n## История изменений\n2026-02-20 — agreed\n[/SAVE_CONTRACT]"
+    }
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "зафиксируй контракт"}
+  ]
+}

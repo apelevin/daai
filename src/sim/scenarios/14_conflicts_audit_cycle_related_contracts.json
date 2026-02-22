@@ -1,0 +1,13 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "dd_lead", "display_name": "Data Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": [\n      {\"id\": \"a\", \"name\": \"A\", \"status\": \"agreed\", \"file\": \"contracts/a.md\"},\n      {\"id\": \"b\", \"name\": \"B\", \"status\": \"agreed\", \"file\": \"contracts/b.md\"}\n    ]}"},
+    {"path": "contracts/a.md", "content": "# Data Contract: A\n\n## Формула\nЧеловеческая: A\nПсевдо-SQL: SELECT 1\n\n## Связь с Extra Time\nA → Extra Time\n\n## Связанные контракты\n- b\n"},
+    {"path": "contracts/b.md", "content": "# Data Contract: B\n\n## Формула\nЧеловеческая: B\nПсевдо-SQL: SELECT 1\n\n## Связь с Extra Time\nB → Extra Time\n\n## Связанные контракты\n- a\n"}
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "аудит конфликтов"}
+  ]
+}

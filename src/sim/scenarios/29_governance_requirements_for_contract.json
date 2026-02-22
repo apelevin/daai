@@ -1,0 +1,17 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "dd_lead", "display_name": "Data Lead"}
+  ],
+  "seed_files": [
+    {"path": "participants/dd_lead.md", "content": "# Data Lead (@dd_lead)\n\n(ready)\n"},
+    {"path": "participants/index.json", "content": "{\"participants\":[{\"username\":\"dd_lead\",\"active\":true}]}"},
+
+    {"path": "context/governance.json", "content": "{\"tiers\":{\"tier_1\":{\"description\":\"Стратегические\",\"approval_required\":[\"ceo\",\"cfo\"],\"consensus_threshold\":1.0}}}"},
+    {"path": "context/roles.json", "content": "{\"roles\":{\"ceo\":[\"alexey\"],\"cfo\":[\"finance_lead\"]}}"},
+
+    {"path": "contracts/index.json", "content": "{\"contracts\": [\n      {\"id\": \"extra_time\", \"name\": \"Extra Time\", \"status\": \"draft\", \"file\": \"drafts/extra_time.md\", \"tier\": \"tier_1\"}\n    ]}"}
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "какие роли нужны для extra_time"}
+  ]
+}

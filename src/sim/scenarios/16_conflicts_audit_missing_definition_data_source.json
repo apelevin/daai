@@ -1,0 +1,12 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "dd_lead", "display_name": "Data Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": [\n      {\"id\": \"ni\", \"name\": \"NI\", \"status\": \"agreed\", \"file\": \"contracts/ni.md\"}\n    ]}"},
+    {"path": "contracts/ni.md", "content": "# Data Contract: NI\n\n## Формула\nЧеловеческая: считаем\nПсевдо-SQL: SELECT 1\n\n## Связь с Extra Time\nNI → Revenue → Extra Time\n"}
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "аудит конфликтов"}
+  ]
+}

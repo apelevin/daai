@@ -1,0 +1,22 @@
+{
+  "tiers": {
+    "tier_1": {
+      "description": "Стратегические метрики (North Star / Strategic)",
+      "approval_required": ["ceo", "cfo", "circle_lead"],
+      "consensus_threshold": 1.0,
+      "review_frequency_days": 365
+    },
+    "tier_2": {
+      "description": "Операционные метрики (ключевые доменные)",
+      "approval_required": ["circle_lead", "data_lead"],
+      "consensus_threshold": 0.8,
+      "review_frequency_days": 180
+    },
+    "tier_3": {
+      "description": "Диагностические метрики",
+      "approval_required": ["data_lead"],
+      "consensus_threshold": 0.6,
+      "review_frequency_days": 180
+    }
+  }
+}

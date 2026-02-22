@@ -25,6 +25,9 @@ Extra Time = Avg_Saved_Time_per_job × Avg_Jobs_per_user × MAU
 
 # Формат Data Contract
 
+Ориентируйся на эталонный пример (golden example):
+- `context/golden_examples/win_ni.md`
+
 Когда формируешь Data Contract, используй этот формат:
 
 ```markdown

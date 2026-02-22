@@ -17,6 +17,7 @@
       "response": "Спасибо! Зафиксировал.\n\n[UPDATE_PARTICIPANT:newbie]\n# New Person (@newbie)\n\n## Базовое\n- Круг: Sales\n- Роль: Руководитель продаж\n\n## Домен и данные\n- Метрики: WIN NI, конверсия\n\n## Боли\n- Расхождения между бордом и CRM\n[/UPDATE_PARTICIPANT]"
     }
   ],
+  "auto_onboard": false,
   "steps": [
     {"type": "posted", "id": "p1", "user_id": "u1", "message": "Привет"},
     {"type": "posted", "id": "p2", "user_id": "u1", "message": "Я отвечаю за Sales, моя роль руководитель продаж. Метрики: WIN NI. Боль: цифры расходятся."}

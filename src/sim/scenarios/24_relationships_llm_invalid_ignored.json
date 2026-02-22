@@ -1,0 +1,31 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "dd_lead", "display_name": "Data Lead"}
+  ],
+  "seed_files": [
+    {"path": "participants/dd_lead.md", "content": "# Data Lead (@dd_lead)\n\n(ready)\n"},
+    {"path": "participants/index.json", "content": "{\"participants\":[{\"username\":\"dd_lead\",\"active\":true}]}"},
+
+    {"path": "contracts/index.json", "content": "{\"contracts\": [\n      {\"id\": \"dim_customer\", \"name\": \"dim_customer\", \"status\": \"agreed\", \"file\": \"contracts/dim_customer.md\"}\n    ]}"},
+    {"path": "contracts/dim_customer.md", "content": "# Data Contract: dim_customer\n\n## Определение\nЮрлицо\n\n## Формула\nЧеловеческая: ...\nПсевдо-SQL: SELECT 1\n\n## Источник данных\nCRM\n\n## Связь с Extra Time\ndim_customer → MAU → Extra Time\n"},
+    {"path": "contracts/relationships.json", "content": "{\"relationships\": []}"}
+  ],
+  "router_rules": [
+    {"match": "зафиксируй контракт", "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": ["contracts/index.json"], "model": "heavy"}}
+  ],
+  "heavy_rules": [
+    {
+      "match": "зафиксируй контракт",
+      "match_in": "tail",
+      "response": "[SAVE_CONTRACT:win_ni]\n# Data Contract: WIN NI\n\n## Статус\nApproved\n\n## Определение\nWIN NI зависит от dim_customer.\n\n## Формула\nЧеловеческая: ...\nПсевдо-SQL: SELECT 1\n\n## Источник данных\nCRM\n\n## Включает\n...\n\n## Исключения\n...\n\n## Гранулярность\n...\n\n## Ответственный за данные\n- CRM: @dd_lead\n\n## Ответственный за расчёт\n@dd_lead\n\n## Связь с Extra Time\nWIN NI → New Clients → MAU → Extra Time\n\n## Потребители\n...\n\n## Состояние данных\n...\n\n## Известные проблемы\n...\n\n## Связанные контракты\n- dim_customer\n\n## Согласовано\n@dd_lead — 2026-02-20\n\n## История изменений\n2026-02-20 — agreed\n[/SAVE_CONTRACT]"
+    },
+    {
+      "match": "Текущий контракт id: win_ni",
+      "match_in": "tail",
+      "response": "{\"relationships\":[{\"from\":\"win_ni\",\"to\":\"not_exists\",\"type\":\"depends_on\",\"description\":\"...\"},{\"from\":\"other\",\"to\":\"dim_customer\",\"type\":\"magic\",\"description\":\"...\"}]}"
+    }
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "зафиксируй контракт"}
+  ]
+}

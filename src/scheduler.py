@@ -63,12 +63,34 @@ class Scheduler:
 
                 message = None
 
+                def _render(text: str, ctx: dict[str, str]) -> str:
+                    out = text
+                    for k, v in (ctx or {}).items():
+                        out = out.replace("{" + k + "}", v)
+                    return out
+
+                def apply(marker: str, base_text: str, ctx: dict[str, str]) -> str:
+                    # Wrapper marker
+                    if templates and marker in templates:
+                        wrapped = templates.replace(marker, base_text)
+                        return _render(wrapped, ctx).strip()
+                    # No wrapper marker: still allow placeholders inside base_text
+                    return _render(base_text, ctx).strip()
+
                 if step == 1:
-                    # Soft reminder — template substitution, no LLM
-                    message = (
+                    # Soft reminder — template substitution, no LLM (MVP)
+                    base = (
                         f"@{target_user}, напоминаю — жду твоё мнение по {contract_id}. "
                         f"Можешь ответить коротко, даже одним предложением."
                     )
+                    ctx = {
+                        "TARGET_USER": f"@{target_user}",
+                        "TARGET_USERNAME": target_user,
+                        "CONTRACT_ID": contract_id,
+                        "QUESTION": question,
+                    }
+                    message = apply("{SOFT_REMINDER}", base, ctx)
+
                     self._send_reminder_to_thread(thread_id, message)
                     rem["escalation_step"] = 2
 
@@ -96,6 +118,27 @@ class Scheduler:
                         )
                         message = f"@{target_user}, упрощу.\n{options}\nНапиши A или B, я дальше сам оформлю."
 
+                    # placeholders for A/B options (best-effort)
+                    option_a = ""
+                    option_b = ""
+                    if "\nA" in message or "A —" in message:
+                        # naive extract
+                        for ln in message.splitlines():
+                            if ln.strip().startswith("A"):
+                                option_a = ln.split("—", 1)[-1].strip()
+                            if ln.strip().startswith("B"):
+                                option_b = ln.split("—", 1)[-1].strip()
+
+                    ctx = {
+                        "TARGET_USER": f"@{target_user}",
+                        "TARGET_USERNAME": target_user,
+                        "CONTRACT_ID": contract_id,
+                        "QUESTION": question,
+                        "OPTION_A": option_a,
+                        "OPTION_B": option_b,
+                    }
+                    message = apply("{AB_REMINDER}", message, ctx)
+
                     self._send_reminder_to_thread(thread_id, message)
                     rem["escalation_step"] = 3
 
@@ -105,6 +148,13 @@ class Scheduler:
                         f"Привет. В канале Data Contracts жду твой ответ по {contract_id} — "
                         f"это блокирует согласование. Можешь ответить прямо здесь."
                     )
+                    ctx = {
+                        "TARGET_USER": f"@{target_user}",
+                        "TARGET_USERNAME": target_user,
+                        "CONTRACT_ID": contract_id,
+                        "QUESTION": question,
+                    }
+                    message = apply("{DM_REMINDER}", message, ctx)
                     if target_mm_user_id:
                         try:
                             self.mm.send_dm(target_mm_user_id, message)
@@ -127,6 +177,15 @@ class Scheduler:
                         f"@{self.escalation_user}, контракт {contract_id} заблокирован {days} дней. "
                         f"Жду ответа от @{target_user}. Нужна помощь."
                     )
+                    ctx = {
+                        "ESCALATION_USER": f"@{self.escalation_user}",
+                        "TARGET_USER": f"@{target_user}",
+                        "TARGET_USERNAME": target_user,
+                        "CONTRACT_ID": contract_id,
+                        "DAYS_BLOCKED": str(days),
+                        "QUESTION": question,
+                    }
+                    message = apply("{ESCALATION_REMINDER}", message, ctx)
                     self._send_reminder_to_thread(thread_id, message)
                     # Keep step at 4, don't escalate further
                     rem["escalation_step"] = 5

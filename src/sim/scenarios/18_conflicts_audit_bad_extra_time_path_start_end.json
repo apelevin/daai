@@ -1,0 +1,12 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "dd_lead", "display_name": "Data Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": [\n      {\"id\": \"activation_rate\", \"name\": \"Activation Rate\", \"status\": \"agreed\", \"file\": \"contracts/activation_rate.md\"}\n    ]}"},
+    {"path": "contracts/activation_rate.md", "content": "# Data Contract: Activation Rate\n\n## Определение\n...\n\n## Формула\nЧеловеческая: ...\nПсевдо-SQL: SELECT 1\n\n## Источник данных\nCRM\n\n## Связь с Extra Time\nMAU → Activation → Extra Time (через активацию)\n"}
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "аудит конфликтов"}
+  ]
+}

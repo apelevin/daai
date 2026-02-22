@@ -1,0 +1,8 @@
+{
+  "roles": {
+    "ceo": ["alexey", "pelevin"],
+    "cfo": [],
+    "circle_lead": [],
+    "data_lead": ["dd_lead"]
+  }
+}

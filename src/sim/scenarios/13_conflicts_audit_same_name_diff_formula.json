@@ -1,0 +1,16 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "dd_lead", "display_name": "Data Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": [\n      {\"id\": \"win_ni_v1\", \"name\": \"WIN NI\", \"status\": \"agreed\", \"file\": \"contracts/win_ni_v1.md\"},\n      {\"id\": \"win_ni_v2\", \"name\": \"WIN NI\", \"status\": \"agreed\", \"file\": \"contracts/win_ni_v2.md\"}\n    ]}"},
+    {"path": "contracts/win_ni_v1.md", "content": "# Data Contract: WIN NI\n\n## Формула\nЧеловеческая: считаем подписания\nПсевдо-SQL: SELECT count(*) FROM deals WHERE signed_at IS NOT NULL\n\n## Связь с Extra Time\nWIN NI → New Clients → MAU → Extra Time\n"},
+    {"path": "contracts/win_ni_v2.md", "content": "# Data Contract: WIN NI\n\n## Формула\nЧеловеческая: считаем оплаты\nПсевдо-SQL: SELECT count(*) FROM invoices WHERE paid_at IS NOT NULL\n\n## Связь с Extra Time\nWIN NI → New Clients → MAU → Extra Time\n"}
+  ],
+  "router_rules": [],
+  "cheap_rules": [],
+  "heavy_rules": [],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "аудит конфликтов"}
+  ]
+}

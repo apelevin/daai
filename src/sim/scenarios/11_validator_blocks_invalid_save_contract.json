@@ -1,0 +1,21 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "sales_lead", "display_name": "Sales Lead"}
+  ],
+  "seed_files": [
+    {"path": "contracts/index.json", "content": "{\"contracts\": []}"}
+  ],
+  "router_rules": [
+    {"match": "сохрани финальную версию", "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": [], "model": "heavy"}}
+  ],
+  "heavy_rules": [
+    {
+      "match": "сохрани финальную версию",
+      "match_in": "tail",
+      "response": "✅ Ок\n\n[SAVE_CONTRACT:win_ni]\n# Data Contract: WIN NI\n\n## Статус\nСогласован\n\n## Определение\n...\n\n## Формула\nSUM(x)\n\n## Источник данных\nCRM\n\n## Включает\n...\n\n## Исключения\n...\n\n## Гранулярность\n...\n\n## Ответственный за данные\n- CRM: @sales_lead\n\n## Ответственный за расчёт\n@sales_lead\n\n## Связь с Extra Time\nWIN NI влияет на Extra Time\n\n## Потребители\n...\n\n## Состояние данных\n...\n\n## Известные проблемы\n...\n\n## Согласовано\n@sales_lead — 2026-02-20\n\n## История изменений\n2026-02-20 — согласован\n[/SAVE_CONTRACT]"
+    }
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "сохрани финальную версию"}
+  ]
+}

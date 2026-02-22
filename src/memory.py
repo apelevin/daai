@@ -266,6 +266,23 @@ class Memory:
                 return p.get("active") is not False
         return True
 
+    def is_participant_onboarded(self, username: str) -> bool:
+        """Return whether a participant was already onboarded.
+
+        If no index exists, default to False.
+        """
+        idx = self.read_json("participants/index.json")
+        if not idx or not isinstance(idx, dict) or "participants" not in idx:
+            return False
+        for p in idx.get("participants", []):
+            if isinstance(p, dict) and p.get("username") == username:
+                return p.get("onboarded") is True
+        return False
+
+    def set_participant_onboarded(self, username: str, onboarded: bool = True) -> None:
+        patch = {"onboarded": onboarded}
+        self.upsert_participant_index(username, patch)
+
     # ── Decisions ───────────────────────────────────────────────────
 
     def save_decision(self, data: dict) -> None:

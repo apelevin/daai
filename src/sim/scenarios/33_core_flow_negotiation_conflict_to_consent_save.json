@@ -1,0 +1,57 @@
+{
+  "users": [
+    {"user_id": "u1", "username": "sales_lead", "display_name": "Sales Lead"},
+    {"user_id": "u2", "username": "dd_lead", "display_name": "Data Lead"}
+  ],
+  "seed_files": [
+    {"path": "participants/sales_lead.md", "content": "# Sales Lead (@sales_lead)\n\n(onboarded)\n"},
+    {"path": "participants/dd_lead.md", "content": "# Data Lead (@dd_lead)\n\n(onboarded)\n"},
+    {"path": "participants/index.json", "content": "{\"participants\":[{\"username\":\"sales_lead\",\"active\":true,\"onboarded\":true},{\"username\":\"dd_lead\",\"active\":true,\"onboarded\":true}]}"},
+
+    {"path": "contracts/index.json", "content": "{\"contracts\": [{\"id\":\"win_ni\",\"name\":\"WIN NI\",\"status\":\"draft\",\"tier\":\"tier_2\"},{\"id\":\"dim_customer\",\"name\":\"dim_customer\",\"status\":\"agreed\"}]}"},
+    {"path": "context/governance.json", "content": "{\"tiers\":{\"tier_2\":{\"description\":\"Операционные\",\"approval_required\":[\"circle_lead\",\"data_lead\"],\"consensus_threshold\":0.8}}}"},
+    {"path": "context/roles.json", "content": "{\"roles\":{\"data_lead\":[\"dd_lead\"],\"circle_lead\":[\"sales_lead\"]}}"},
+    {"path": "context/glossary.json", "content": "{\"terms\":[{\"canonical\":\"Клиент\",\"aliases\":[\"клиент\"],\"disambiguation\":{\"Юрлицо\":[\"юрлицо\",\"юридическое лицо\"],\"Пользователь\":[\"пользователь\"]}}]}"},
+    {"path": "context/metrics_tree.md", "content": "- WIN NI ← DATA CONTRACT\n"},
+    {"path": "contracts/relationships.json", "content": "{\"relationships\": []}"}
+  ],
+  "router_rules": [
+    {"match": "давайте согласуем win_ni", "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": ["contracts/index.json"], "model": "heavy"}},
+    {"match": "подписание", "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": ["contracts/index.json"], "model": "heavy"}},
+    {"match": "оплата", "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": ["contracts/index.json"], "model": "heavy"}},
+    {"match": "да, зафиксируй", "response": {"type": "contract_discussion", "entity": "win_ni", "load_files": ["contracts/index.json"], "model": "heavy"}}
+  ],
+  "heavy_rules": [
+    {
+      "match": "давайте согласуем win_ni",
+      "match_in": "tail",
+      "response": "Ок. Давайте согласуем WIN NI.\n\nВопрос 1/3: в какой момент фиксируем WIN NI — при **подписании** контракта или при **оплате** инвойса?"
+    },
+    {
+      "match": "подписание",
+      "match_in": "tail",
+      "response": "Принял(а): Sales предлагает фиксировать WIN NI по подписанию.\n\n@dd_lead, твоя позиция: подписание или оплата?"
+    },
+    {
+      "match": "оплата",
+      "match_in": "tail",
+      "response": "Вижу конфликт: Sales = подписание, Data/Finance = оплата.\n\nПредлагаю два показателя (расширение пирога):\nA — WIN NI Signed (для Sales/pipeline)\nB — WIN NI Paid (для Finance/reporting)\n\nСогласны на A+B? Ответь `да` или `нет`."
+    },
+    {
+      "match": "да, зафиксируй",
+      "match_in": "tail",
+      "response": "Отлично. Фиксирую контракт WIN NI как базовый (Paid) и добавляю связанный контракт WIN NI Signed в очередь.\n\n[SAVE_CONTRACT:win_ni]\n# Data Contract: WIN NI\n\n## Статус\nApproved\n\n## Определение\nWIN NI — New Income от **новых юрлиц** (Клиент=Юрлицо), фиксируемых по **оплате первого инвойса** в периоде.\n\n## Формула\nЧеловеческая: сумма NI по новым юрлицам, у которых оплачен первый инвойс в текущем квартале.\nПсевдо-SQL: SELECT SUM(amount) FROM invoices WHERE is_first_paid=true AND is_new_income=true\n\n## Источник данных\n- Billing\n- CRM\n\n## Включает\n...\n\n## Исключения\n...\n\n## Гранулярность\n...\n\n## Ответственный за данные\n- Billing: @dd_lead\n- CRM: @sales_lead\n\n## Ответственный за расчёт\n@dd_lead\n\n## Связь с Extra Time\nWIN NI → New Clients → MAU → Extra Time\n\n## Потребители\n...\n\n## Состояние данных\n...\n\n## Известные проблемы\n...\n\n## Связанные контракты\n- dim_customer\n\n## Согласовано\n@sales_lead — 2026-02-21\n@dd_lead — 2026-02-21\n\n## История изменений\n2026-02-21 — agreed\n[/SAVE_CONTRACT]"
+    },
+    {
+      "match": "Текущий контракт id: win_ni",
+      "match_in": "tail",
+      "response": "{\"relationships\":[{\"from\":\"win_ni\",\"to\":\"dim_customer\",\"type\":\"depends_on\",\"description\":\"WIN NI использует dim_customer для определения «нового юрлица»\"}]}"
+    }
+  ],
+  "steps": [
+    {"type": "posted", "user_id": "u1", "message": "давайте согласуем win_ni"},
+    {"type": "posted", "user_id": "u1", "message": "подписание"},
+    {"type": "posted", "user_id": "u2", "message": "оплата"},
+    {"type": "posted", "user_id": "u1", "message": "да, зафиксируй"}
+  ]
+}
