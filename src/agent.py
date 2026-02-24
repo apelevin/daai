@@ -497,11 +497,13 @@ class Agent:
                         logger.info("Relationships updated: +%d", added)
             except Exception as e:
                 logger.warning("Failed to update relationships.json: %s", e)
+            now_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             self.memory.update_contract_index(contract_id, {
                 "name": name,
                 "status": "agreed",
                 "file": f"contracts/{contract_id}.md",
-                "agreed_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                "agreed_date": now_date,
+                "status_updated_at": now_date,
             })
 
             # Best-effort: mark the corresponding node in metrics_tree.md as agreed
