@@ -41,24 +41,34 @@ def _extract_contract_name(markdown: str) -> str | None:
     return None
 
 # Side-effect block patterns in LLM output
+# Side-effect block patterns in LLM output.
+# We are tolerant to missing closing tags by stopping at the next side-effect marker or end of text.
+_SIDE_EFFECT_STOP = r"(?=\n\[(?:SAVE_CONTRACT|SAVE_DRAFT|UPDATE_DISCUSSION|ADD_REMINDER|UPDATE_PARTICIPANT|SAVE_DECISION)(?::|\])|\Z)"
+
 SIDE_EFFECT_PATTERNS = {
     "SAVE_CONTRACT": re.compile(
-        r"\[SAVE_CONTRACT:(\w+)\]\n(.*?)\[/SAVE_CONTRACT\]", re.DOTALL
+        rf"\[SAVE_CONTRACT:(\w+)\]\n(.*?)(?:\[/SAVE_CONTRACT\]|{_SIDE_EFFECT_STOP})",
+        re.DOTALL,
     ),
     "SAVE_DRAFT": re.compile(
-        r"\[SAVE_DRAFT:(\w+)\]\n(.*?)\[/SAVE_DRAFT\]", re.DOTALL
+        rf"\[SAVE_DRAFT:(\w+)\]\n(.*?)(?:\[/SAVE_DRAFT\]|{_SIDE_EFFECT_STOP})",
+        re.DOTALL,
     ),
     "UPDATE_DISCUSSION": re.compile(
-        r"\[UPDATE_DISCUSSION:(\w+)\]\n(.*?)\[/UPDATE_DISCUSSION\]", re.DOTALL
+        rf"\[UPDATE_DISCUSSION:(\w+)\]\n(.*?)(?:\[/UPDATE_DISCUSSION\]|{_SIDE_EFFECT_STOP})",
+        re.DOTALL,
     ),
     "ADD_REMINDER": re.compile(
-        r"\[ADD_REMINDER\]\n(.*?)\[/ADD_REMINDER\]", re.DOTALL
+        rf"\[ADD_REMINDER\]\n(.*?)(?:\[/ADD_REMINDER\]|{_SIDE_EFFECT_STOP})",
+        re.DOTALL,
     ),
     "UPDATE_PARTICIPANT": re.compile(
-        r"\[UPDATE_PARTICIPANT:(\w+)\]\n(.*?)\[/UPDATE_PARTICIPANT\]", re.DOTALL
+        rf"\[UPDATE_PARTICIPANT:(\w+)\]\n(.*?)(?:\[/UPDATE_PARTICIPANT\]|{_SIDE_EFFECT_STOP})",
+        re.DOTALL,
     ),
     "SAVE_DECISION": re.compile(
-        r"\[SAVE_DECISION\]\n(.*?)\[/SAVE_DECISION\]", re.DOTALL
+        rf"\[SAVE_DECISION\]\n(.*?)(?:\[/SAVE_DECISION\]|{_SIDE_EFFECT_STOP})",
+        re.DOTALL,
     ),
 }
 
