@@ -1,12 +1,10 @@
 .env
+.env.*
 env.local
+out/
+*.log
+.DS_Store
 __pycache__/
 *.pyc
 .venv/
 venv/
-.DS_Store
-contracts/
-drafts/
-participants/
-memory/
-tasks/

@@ -1,0 +1,67 @@
+{
+  "contracts": [
+    {
+      "id": "win_ni",
+      "name": "win_ni",
+      "status": "draft",
+      "file": "drafts/win_ni.md"
+    },
+    {
+      "id": "contract_churn",
+      "name": "Contract Churn",
+      "status": "agreed",
+      "file": "contracts/contract_churn.md",
+      "agreed_date": "2026-02-21",
+      "versions_dir": "contracts/versions/contract_churn",
+      "history_file": "contracts/versions/contract_churn/history.jsonl"
+    },
+    {
+      "id": "client_segmentation",
+      "name": "client_segmentation",
+      "status": "in_review",
+      "status_updated_at": "2026-02-24"
+    },
+    {
+      "id": "client_tier_segmentation",
+      "name": "client_tier_segmentation",
+      "status": "draft",
+      "file": "drafts/client_tier_segmentation.md"
+    },
+    {
+      "id": "client_segmentation_api",
+      "name": "client_segmentation_api",
+      "status": "in_review",
+      "status_updated_at": "2026-02-24"
+    },
+    {
+      "id": "client_segmentation_tiers",
+      "name": "client_segmentation_tiers",
+      "status": "draft",
+      "file": "drafts/client_segmentation_tiers.md"
+    },
+    {
+      "id": "data_contracts_agent",
+      "name": "data_contracts_agent",
+      "status": "in_review",
+      "status_updated_at": "2026-02-24"
+    },
+    {
+      "id": "inbound_metrics",
+      "name": "inbound_metrics",
+      "status": "in_review",
+      "status_updated_at": "2026-02-24"
+    },
+    {
+      "id": "unit_economics",
+      "name": "unit_economics",
+      "status": "in_review",
+      "status_updated_at": "2026-02-24"
+    },
+    {
+      "id": "infrastructure_cost",
+      "name": "infrastructure_cost",
+      "status": "in_review",
+      "status_updated_at": "2026-02-24"
+    }
+  ]
+}

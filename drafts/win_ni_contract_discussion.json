@@ -1,0 +1,11 @@
+{
+  "entity": "WIN NI",
+  "status": "collecting_positions",
+  "positions": {
+    "techacc_iit_v1": "подписанные контракты в CRM",
+    "techacc_iit_v2": "выставленные инвойсы в DDP"
+  },
+  "proposed_resolution": "",
+  "blocker": "противоречие в позициях одного stakeholder",
+  "next_action": "уточнить у @techacc_iit какая позиция актуальна, получить позицию @pelevin"
+}

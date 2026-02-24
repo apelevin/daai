@@ -1,0 +1,11 @@
+{
+  "entity": "WIN NI",
+  "status": "initiated",
+  "positions": {
+    "board_ceo": "27.5 млн",
+    "export": "31 млн"
+  },
+  "proposed_resolution": "",
+  "blocker": "need_definitions",
+  "next_action": "waiting_for_stakeholder_definitions"
+}

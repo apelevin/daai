@@ -1,0 +1,11 @@
+{
+  "entity": "Contract Churn",
+  "status": "finalizing",
+  "positions": {
+    "techacc_iit": "Вариант A - коммерческий churn",
+    "techacc_iit2": "Вариант A - коммерческий churn + уточнение по grace period"
+  },
+  "proposed_resolution": "Вариант A с уточнениями Finance",
+  "blocker": "none",
+  "next_action": "Ожидание ответственного за данные от Sales"
+}

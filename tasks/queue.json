@@ -1,0 +1,25 @@
+{
+  "queue": [
+    {
+      "id": "win_ni",
+      "priority": 1,
+      "reason": "Расхождение 27.5 vs 31 млн между бордом CEO и выгрузкой DDP",
+      "stakeholders": [],
+      "status": "queued"
+    },
+    {
+      "id": "churn_rate",
+      "priority": 2,
+      "reason": "Sales и Product считают по-разному",
+      "stakeholders": [],
+      "status": "queued"
+    },
+    {
+      "id": "mau",
+      "priority": 3,
+      "reason": "Нет согласованного определения активного пользователя",
+      "stakeholders": [],
+      "status": "queued"
+    }
+  ]
+}
