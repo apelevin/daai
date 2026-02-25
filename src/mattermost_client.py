@@ -80,8 +80,8 @@ class MattermostClient:
         logger.debug("Sent to channel, post_id=%s", resp["id"])
         return resp
 
-    def send_dm(self, user_id: str, message: str) -> dict:
-        """Send a direct message to a user."""
+    def send_dm(self, user_id: str, message: str, root_id: str | None = None) -> dict:
+        """Send a direct message to a user. If root_id — reply in thread."""
         dm_channel = self.driver.channels.create_direct_message_channel(
             [self.bot_user_id, user_id]
         )
@@ -89,6 +89,8 @@ class MattermostClient:
             "channel_id": dm_channel["id"],
             "message": message,
         }
+        if root_id:
+            post["root_id"] = root_id
         resp = self.driver.posts.create_post(post)
         logger.debug("Sent DM to %s, post_id=%s", user_id, resp["id"])
         return resp

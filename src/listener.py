@@ -262,8 +262,9 @@ class Listener:
         # Send reply
         try:
             if channel_type == "dm":
-                logger.info("Sending DM reply to user_id=%s (post_id=%s) len=%s", user_id, post_id, len(reply))
-                self.mm.send_dm(user_id, reply)
+                dm_thread_root = root_id or post_id
+                logger.info("Sending DM reply to user_id=%s (post_id=%s) root=%s len=%s", user_id, post_id, dm_thread_root, len(reply))
+                self.mm.send_dm(user_id, reply, root_id=dm_thread_root)
             else:
                 # Reply in thread: prefer active thread from agent, then original root, then this post
                 thread_root = (result.thread_root_id if result else None) or root_id or post_id
