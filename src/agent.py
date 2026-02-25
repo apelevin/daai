@@ -501,12 +501,28 @@ class Agent:
 
                     check = check_approval_policy(contract_md=content, policy=policy, role_map=role_map)
                     if not check.ok:
-                        missing = ", ".join(check.missing_roles) or "(неизвестно)"
+                        missing_roles = list(check.missing_roles or [])
+                        missing = ", ".join(missing_roles) or "(неизвестно)"
+
+                        # Short role descriptions to reduce ambiguity for participants.
+                        role_desc = {
+                            "data_lead": "Data Lead — отвечает за корректность и качество данных в источниках (поля, покрытие, обновления).",
+                            "circle_lead": "Circle Lead — владелец/лидер круга (домена); отвечает за бизнес‑смысл правил и последствий внедрения.",
+                            "ceo": "CEO — финальное бизнес‑утверждение/приоритет.",
+                            "cfo": "CFO/Finance — финансовая методология и контроль влияния на отчётность.",
+                        }
+                        hints = []
+                        for r in missing_roles:
+                            if r in role_desc:
+                                hints.append(f"- {role_desc[r]}")
+
                         reply = reply.replace(match.group(0), "")
+                        extra = ("\n\nКоротко про роли:\n" + "\n".join(hints)) if hints else ""
                         return (
                             f"⚠️ Контракт не сохраняю: не выполнена политика согласования ({tier_key}).\n\n"
                             f"Не хватает ролей: {missing}.\n"
-                            "Добавь нужных согласующих в секцию «## Согласовано», затем повтори: «зафиксируй контракт»."
+                            "Добавь нужных согласующих в секцию «## Согласовано» (строки вида `@username — YYYY-MM-DD`), затем повтори: «зафиксируй контракт»."
+                            f"{extra}"
                         ).strip(), info
             except Exception:
                 pass
