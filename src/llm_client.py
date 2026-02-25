@@ -13,8 +13,8 @@ class LLMClient:
     def __init__(self):
         api_key = os.environ["OPENROUTER_API_KEY"]
         base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-        self.cheap_model = os.environ.get("CHEAP_MODEL", "anthropic/claude-3-5-haiku-20241022")
-        self.heavy_model = os.environ.get("HEAVY_MODEL", "anthropic/claude-sonnet-4-5-20250929")
+        self.cheap_model = os.environ.get("CHEAP_MODEL", "anthropic/claude-3.5-haiku")
+        self.heavy_model = os.environ.get("HEAVY_MODEL", "anthropic/claude-sonnet-4")
 
         self.client = openai.OpenAI(
             base_url=base_url,
