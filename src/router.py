@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import re
@@ -28,6 +30,21 @@ def route(llm_client, memory, username: str, message: str,
         cid = m.group(2)
         ts = m.group(3)
         return {"type": "contract_version", "entity": f"{cid}:{ts}", "load_files": [], "model": "cheap"}
+
+    m = re.search(r"\bпокажи\s+контракт\s+([a-z0-9_\-]+)\b", message, re.IGNORECASE)
+    if m:
+        cid = m.group(1).lower()
+        return {"type": "show_contract", "entity": cid, "load_files": [], "model": "cheap"}
+
+    m = re.search(r"\bпокажи\s+draft\s+([a-z0-9_\-]+)\b", message, re.IGNORECASE)
+    if m:
+        cid = m.group(1).lower()
+        return {"type": "show_draft", "entity": cid, "load_files": [], "model": "cheap"}
+
+    m = re.search(r"\bпокажи\s+черновик\s+([a-z0-9_\-]+)\b", message, re.IGNORECASE)
+    if m:
+        cid = m.group(1).lower()
+        return {"type": "show_draft", "entity": cid, "load_files": [], "model": "cheap"}
 
     m = re.search(r"\b(аудит|проверь)\s+конфликт(ы|ов)?\b", message, re.IGNORECASE)
     if m:
@@ -90,20 +107,22 @@ def route(llm_client, memory, username: str, message: str,
     # Accept lines like:
     #   Data Lead — @pavelpetrin
     #   Circle Lead - @korabovtsev
+    #   Circle Lead — @Никита Корабовцев  (cyrillic display names)
     assignments = []
     for line in (message or "").splitlines():
         line = line.strip()
         if not line:
             continue
 
-        m = re.search(r"\bdata\s*lead\b\s*[—\-:]\s*@([^\s]+)", line, re.IGNORECASE)
+        # Match role label, separator, then @mention (latin or cyrillic, possibly multi-word)
+        m = re.search(r"\bdata\s*lead\b\s*[—\-:]\s*@(.+)$", line, re.IGNORECASE)
         if m:
-            assignments.append(("data_lead", m.group(1).lower()))
+            assignments.append(("data_lead", m.group(1).strip().lower()))
             continue
 
-        m = re.search(r"\bcircle\s*lead\b\s*[—\-:]\s*@([^\s]+)", line, re.IGNORECASE)
+        m = re.search(r"\bcircle\s*lead\b\s*[—\-:]\s*@(.+)$", line, re.IGNORECASE)
         if m:
-            assignments.append(("circle_lead", m.group(1).lower()))
+            assignments.append(("circle_lead", m.group(1).strip().lower()))
             continue
 
     if assignments:

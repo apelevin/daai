@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
 
@@ -27,11 +29,14 @@ REQUIRED_SECTIONS = [
     "Связь с Extra Time",
     "Потребители",
     "Состояние данных",
-    "Известные проблемы",
-    "Связанные контракты",
     "Согласовано",
     "История изменений",
 ]
+
+OPTIONAL_SECTIONS = ["Известные проблемы", "Связанные контракты"]
+
+# All accepted arrow characters/sequences for "Связь с Extra Time"
+ARROW_PATTERNS = ["→", "->", "—>", "=>"]
 
 
 def _extract_sections(md: str) -> dict[str, str]:
@@ -56,6 +61,7 @@ def _extract_sections(md: str) -> dict[str, str]:
 def validate_contract(contract_md: str) -> ValidationReport:
     """Deterministic validation for Data Contract markdown."""
     issues: list[ValidationIssue] = []
+    warnings: list[ValidationIssue] = []
     sections = _extract_sections(contract_md)
 
     # 1) required sections
@@ -63,28 +69,35 @@ def validate_contract(contract_md: str) -> ValidationReport:
     for s in missing:
         issues.append(ValidationIssue(code="missing_section", message=f"Не заполнена секция: {s}"))
 
-    # 2) formula must include human + pseudo-sql
+    # 1b) optional sections — warn but do not block
+    for s in OPTIONAL_SECTIONS:
+        if s not in sections or not sections[s]:
+            warnings.append(ValidationIssue(code="missing_optional_section", message=f"Рекомендуется заполнить секцию: {s}"))
+
+    # 2) formula — must be non-empty (soft warnings for missing sub-formats)
     formula = sections.get("Формула", "")
     if formula:
         if "человеческая" not in formula.lower():
-            issues.append(
+            warnings.append(
                 ValidationIssue(
                     code="formula_missing_human",
-                    message="В секции «Формула» должна быть строка «Человеческая: ...»",
+                    message="Рекомендуется добавить строку «Человеческая: ...» в секцию «Формула»",
                 )
             )
         if "псевдо" not in formula.lower() or "sql" not in formula.lower():
-            issues.append(
+            warnings.append(
                 ValidationIssue(
                     code="formula_missing_sql",
-                    message="В секции «Формула» должен быть блок «Псевдо‑SQL: ...»",
+                    message="Рекомендуется добавить блок «Псевдо‑SQL: ...» в секцию «Формула»",
                 )
             )
 
-    # 3) extra time linkage path
+    # 3) extra time linkage path — accept multiple arrow styles
     linkage = sections.get("Связь с Extra Time", "")
     if linkage:
-        if "extra time" not in linkage.lower() or "→" not in linkage:
+        has_extra_time = "extra time" in linkage.lower()
+        has_arrow = any(arrow in linkage for arrow in ARROW_PATTERNS)
+        if not has_extra_time or not has_arrow:
             issues.append(
                 ValidationIssue(
                     code="missing_extra_time_path",
@@ -93,4 +106,4 @@ def validate_contract(contract_md: str) -> ValidationReport:
             )
 
     ok = len(issues) == 0
-    return ValidationReport(ok=ok, issues=issues)
+    return ValidationReport(ok=ok, issues=issues + warnings)

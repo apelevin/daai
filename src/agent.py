@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import re
@@ -155,12 +157,28 @@ class Agent:
             except Exception:
                 resolved = None
 
+            # If first attempt failed and raw contains a space, try the full multi-word string
+            if not resolved and " " in raw:
+                try:
+                    if hasattr(self.mm, "resolve_username"):
+                        resolved = self.mm.resolve_username(raw)
+                except Exception:
+                    resolved = None
+
+            # If still unresolved, try just the first word (e.g. "Никита" from "Никита Корабовцев")
+            if not resolved and " " in raw:
+                try:
+                    if hasattr(self.mm, "resolve_username"):
+                        resolved = self.mm.resolve_username(raw.split()[0])
+                except Exception:
+                    resolved = None
+
             if resolved:
                 pairs.append((role, str(resolved).lower()))
             else:
                 # If we detected the role label but can't resolve the user, we should respond with guidance.
                 return (
-                    "⚠️ Не смог распознать username пользователя для назначения роли.\n\n"
+                    f"⚠️ Не смог распознать username пользователя «{raw}» для назначения роли.\n\n"
                     "Пожалуйста, напиши так (латиницей, как в mention):\n"
                     "- Circle Lead — @korabovtsev\n"
                     "- Data Lead — @pavelpetrin"
@@ -268,6 +286,20 @@ class Agent:
             if not md:
                 return f"Версия не найдена: `{cid}` `{ts}`"
             return f"Версия `{cid}` `{ts}`:\n\n```markdown\n{md}\n```"
+
+        if route_data.get("type") == "show_contract":
+            cid = (route_data.get("entity") or "").strip().lower()
+            md = self.memory.read_file(f"contracts/{cid}.md")
+            if not md:
+                return f"Контракт `{cid}` не найден на диске (contracts/{cid}.md)."
+            return f"📋 Контракт `{cid}`:\n\n```markdown\n{md}\n```"
+
+        if route_data.get("type") == "show_draft":
+            cid = (route_data.get("entity") or "").strip().lower()
+            md = self.memory.read_file(f"drafts/{cid}.md")
+            if not md:
+                return f"Черновик `{cid}` не найден на диске (drafts/{cid}.md)."
+            return f"📝 Черновик `{cid}`:\n\n```markdown\n{md}\n```"
 
         if route_data.get("type") == "conflicts_audit":
             analyzer = MetricsAnalyzer(self.memory)
@@ -528,8 +560,10 @@ class Agent:
           - saved_drafts: list[str]
           - saved_decisions: int
 
-        Safety rule: SAVE_CONTRACT/SAVE_DRAFT/SAVE_DECISION must happen only when the user explicitly asks
-        to save/fix/update/create a contract (to avoid accidental writes during Q&A in threads).
+        Write is allowed when:
+        (a) the user explicitly asks to save/finalize (keywords in message), OR
+        (b) the LLM itself emitted a SAVE_CONTRACT block (it determined consensus was reached).
+        Both require an allowed route type and non-DM channel.
         """
         reply = raw_response
         info = {
@@ -559,6 +593,10 @@ class Agent:
             ]
             explicit = any(k in m for k in keywords)
 
+            # LLM itself decided to save (emitted SAVE_CONTRACT block) —
+            # trust its judgment that consensus was reached.
+            llm_initiated = bool(SIDE_EFFECT_PATTERNS["SAVE_CONTRACT"].search(raw_response))
+
             # Only allow writes for contract lifecycle events
             allowed_types = {"new_contract_init", "contract_discussion", "problem_report"}
             type_ok = route_data.get("type") in allowed_types
@@ -568,7 +606,7 @@ class Agent:
             if dm_block:
                 return False
 
-            return explicit and type_ok
+            return (explicit or llm_initiated) and type_ok
 
         can_write = allow_contract_write()
         info["can_write"] = can_write
@@ -582,21 +620,21 @@ class Agent:
 
             contract_id, content = match.group(1), match.group(2).strip()
 
+            # Collect ALL blocking issues at once instead of returning on first failure.
+            all_blockers: list[str] = []
+
+            # --- Validation ---
             report = validate_contract(content)
             if not report.ok:
-                # Do not save; return actionable feedback
-                reply = reply.replace(match.group(0), "")
-                bullets = "\n".join([f"- {i.message}" for i in report.issues[:12]])
-                more = "" if len(report.issues) <= 12 else f"\n- …и ещё {len(report.issues)-12}"
-                return (
-                    "⚠️ Контракт не сохраняю: он не проходит валидацию.\n\n"
-                    "Что поправить:\n"
-                    f"{bullets}{more}\n\n"
-                    "После правок напиши: «сохрани финальную версию» или «зафиксируй контракт»."
-                ).strip(), info
+                blocking = [i for i in report.issues if i.code != "missing_optional_section" and not i.code.startswith("formula_missing")]
+                if blocking:
+                    all_blockers.append("**Валидация:**")
+                    for i in blocking[:12]:
+                        all_blockers.append(f"- {i.message}")
+                    if len(blocking) > 12:
+                        all_blockers.append(f"- …и ещё {len(blocking)-12}")
 
-            # Governance tier approvals (MVP): if governance.json declares required roles for this tier,
-            # enforce that the approvers listed in "## Согласовано" include all required roles for tier_1.
+            # --- Governance tier approvals ---
             try:
                 gov = self.memory.read_json("context/governance.json") or {}
                 tiers = (gov.get("tiers") or {}) if isinstance(gov, dict) else {}
@@ -646,44 +684,42 @@ class Agent:
                         missing_roles = list(check.missing_roles or [])
                         missing = ", ".join(missing_roles) or "(неизвестно)"
 
-                        # Short role descriptions to reduce ambiguity for participants.
                         role_desc = {
                             "data_lead": "Data Lead — отвечает за корректность и качество данных в источниках (поля, покрытие, обновления).",
                             "circle_lead": "Circle Lead — владелец/лидер круга (домена); отвечает за бизнес‑смысл правил и последствий внедрения.",
                             "ceo": "CEO — финальное бизнес‑утверждение/приоритет.",
                             "cfo": "CFO/Finance — финансовая методология и контроль влияния на отчётность.",
                         }
-                        hints = []
-                        for r in missing_roles:
-                            if r in role_desc:
-                                hints.append(f"- {role_desc[r]}")
+                        hints = [f"- {role_desc[r]}" for r in missing_roles if r in role_desc]
 
-                        reply = reply.replace(match.group(0), "")
-                        extra = ("\n\nКоротко про роли:\n" + "\n".join(hints)) if hints else ""
-                        return (
-                            f"⚠️ Контракт не сохраняю: не выполнена политика согласования ({tier_key}).\n\n"
-                            f"Не хватает ролей: {missing}.\n"
-                            "Добавь нужных согласующих в секцию «## Согласовано» (строки вида `@username — YYYY-MM-DD`), затем повтори: «зафиксируй контракт»."
-                            f"{extra}"
-                        ).strip(), info
+                        all_blockers.append(f"**Политика согласования ({tier_key}):**")
+                        all_blockers.append(f"- Не хватает ролей: {missing}")
+                        if hints:
+                            all_blockers.extend(hints)
             except Exception:
                 pass
 
-            # Glossary ambiguity check (best-effort): block save until clarified
+            # --- Glossary ambiguity check ---
             try:
                 glossary = self.memory.read_json("context/glossary.json")
-                issues = check_ambiguity(content, glossary)
-                if issues:
-                    reply = reply.replace(match.group(0), "")
-                    bullets = "\n".join([f"- {i.message}" for i in issues])
-                    return (
-                        "⚠️ Контракт не сохраняю: нужно уточнение терминов по глоссарию.\n\n"
-                        f"{bullets}\n\n"
-                        "Ответь в треде, и я обновлю текст (или ты обновишь вручную, затем: «зафиксируй контракт»)."
-                    ).strip(), info
+                glossary_issues = check_ambiguity(content, glossary)
+                if glossary_issues:
+                    all_blockers.append("**Глоссарий:**")
+                    for gi in glossary_issues:
+                        all_blockers.append(f"- {gi.message}")
             except Exception:
                 # If glossary missing/invalid, do not block
                 pass
+
+            # --- If any blockers found, return them all at once ---
+            if all_blockers:
+                reply = reply.replace(match.group(0), "")
+                bullets = "\n".join(all_blockers)
+                return (
+                    "⚠️ Контракт не сохраняю. Все проблемы:\n\n"
+                    f"{bullets}\n\n"
+                    "Исправь все пункты и повтори: «зафиксируй контракт»."
+                ).strip(), info
 
             self.memory.save_contract(contract_id, content)
             info["saved_contracts"].append(contract_id)
@@ -826,10 +862,12 @@ class Agent:
                     "Без дополнительного текста. Контракт должен пройти детерминированную валидацию. "
                     "Обязательные секции (каждая непустая):\n"
                     "- ## Статус\n- ## Определение\n- ## Формула\n- ## Источник данных\n- ## Включает\n- ## Исключения\n- ## Гранулярность\n"
-                    "- ## Ответственный за данные\n- ## Ответственный за расчёт\n- ## Связь с Extra Time\n- ## Потребители\n- ## Состояние данных\n- ## Известные проблемы\n"
-                    "- ## Связанные контракты\n- ## Согласовано\n- ## История изменений\n\n"
-                    "Требования к секции «Формула»: обязательно добавь строку 'Человеческая: ...' и блок 'Псевдо‑SQL: ...'.\n"
-                    "Требования к «Связь с Extra Time»: обязательно путь вида 'X → ... → Extra Time' (с символом стрелки →)."
+                    "- ## Ответственный за данные\n- ## Ответственный за расчёт\n- ## Связь с Extra Time\n- ## Потребители\n- ## Состояние данных\n"
+                    "- ## Согласовано\n- ## История изменений\n\n"
+                    "Опциональные секции (рекомендуются, но НЕ блокируют сохранение):\n"
+                    "- ## Известные проблемы\n- ## Связанные контракты\n\n"
+                    "Требования к секции «Формула»: должна быть непустой. Рекомендуется строка 'Человеческая: ...' и блок 'Псевдо‑SQL: ...'.\n"
+                    "Требования к «Связь с Extra Time»: путь вида 'X → ... → Extra Time' (допустимые стрелки: →, ->, —>, =>)."
                 )
                 user = (
                     f"Contract id: {entity}\n\n"
@@ -847,5 +885,15 @@ class Agent:
                 reply = retry_reply or reply
         except Exception as e:
             logger.warning("SAVE_CONTRACT retry failed: %s", e)
+
+        # Detect false confirmations: LLM says "saved" but nothing was actually written
+        if not info["saved_contracts"]:
+            false_confirms = ["зафиксирова", "контракт сохран", "успешно сохран", "контракт зафикс"]
+            if any(fc in reply.lower() for fc in false_confirms):
+                reply = (
+                    "⚠️ Внимание: контракт НЕ был фактически сохранён на диск. "
+                    "Проверь ошибки выше и повтори «зафиксируй контракт <id>».\n\n"
+                    + reply
+                )
 
         return reply.strip(), info

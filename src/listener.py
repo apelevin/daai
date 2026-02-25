@@ -1,8 +1,17 @@
+from __future__ import annotations
+
 import json
 import logging
+import os
 import threading
+import time
 
 logger = logging.getLogger(__name__)
+
+# Max age (seconds) for persistent dedup entries — 24 hours
+_DEDUP_TTL_SECONDS = 24 * 60 * 60
+_DEDUP_FILE = "tasks/seen_posts.json"
+_DEDUP_MAX_ENTRIES = 4000
 
 
 class Listener:
@@ -14,6 +23,48 @@ class Listener:
         self._seen_post_ids = set()
         self._inflight_post_ids = set()
         self._dedup_lock = threading.Lock()
+
+        # Load persisted dedup state
+        self._load_seen_posts()
+
+    def _load_seen_posts(self):
+        """Load persisted seen post IDs from disk, pruning expired entries."""
+        try:
+            data = self.agent.memory.read_json(_DEDUP_FILE)
+            if isinstance(data, dict) and isinstance(data.get("posts"), list):
+                now = time.time()
+                for entry in data["posts"]:
+                    if isinstance(entry, dict) and isinstance(entry.get("id"), str):
+                        ts = entry.get("ts", 0)
+                        if now - ts < _DEDUP_TTL_SECONDS:
+                            self._seen_post_ids.add(entry["id"])
+                logger.info("Loaded %d persisted seen post IDs", len(self._seen_post_ids))
+        except Exception:
+            # File may not exist yet — that's fine
+            pass
+
+    def _persist_seen_post(self, post_id: str):
+        """Append a post_id to the persistent dedup file (best-effort)."""
+        try:
+            data = self.agent.memory.read_json(_DEDUP_FILE)
+            if not isinstance(data, dict) or not isinstance(data.get("posts"), list):
+                data = {"posts": []}
+
+            now = time.time()
+            # Prune expired entries
+            data["posts"] = [
+                e for e in data["posts"]
+                if isinstance(e, dict) and now - e.get("ts", 0) < _DEDUP_TTL_SECONDS
+            ]
+
+            # Cap max entries
+            if len(data["posts"]) >= _DEDUP_MAX_ENTRIES:
+                data["posts"] = data["posts"][-(_DEDUP_MAX_ENTRIES // 2):]
+
+            data["posts"].append({"id": post_id, "ts": now})
+            self.agent.memory.write_json(_DEDUP_FILE, data)
+        except Exception as e:
+            logger.debug("Failed to persist seen post %s: %s", post_id, e)
 
     def start(self):
         """Connect to WebSocket and start processing events."""
@@ -202,6 +253,7 @@ class Listener:
                 with self._dedup_lock:
                     self._inflight_post_ids.discard(post_id)
                     self._seen_post_ids.add(post_id)
+                self._persist_seen_post(post_id)
             return
 
         # Send reply
@@ -229,8 +281,9 @@ class Listener:
                     self._inflight_post_ids.discard(post_id)
                     self._seen_post_ids.add(post_id)
                     # prevent unbounded growth
-                    if len(self._seen_post_ids) > 4000:
-                        self._seen_post_ids = set(list(self._seen_post_ids)[-2000:])
+                    if len(self._seen_post_ids) > _DEDUP_MAX_ENTRIES:
+                        self._seen_post_ids = set(list(self._seen_post_ids)[-(_DEDUP_MAX_ENTRIES // 2):])
+                self._persist_seen_post(post_id)
 
     def _handle_user_removed(self, event):
         """Handle a user leaving/removal from the Data Contracts channel."""

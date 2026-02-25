@@ -100,12 +100,28 @@ def check_approval_policy(*, contract_md: str, policy: ApprovalPolicy, role_map:
     """Check whether a contract meets tier approval requirements.
 
     role_map: username -> role key (ceo/cfo/circle_lead/data_lead)
+
+    A role is considered satisfied if:
+    (a) an approver listed in the markdown '## Согласовано' section holds that role, OR
+    (b) someone is assigned to that role in role_map (tasks/roles.json).
     """
     approvers = _extract_approvers(contract_md)
-    have_roles = {role_map.get(u) for u in approvers if role_map.get(u)}
-    have_roles.discard(None)
+
+    # Roles covered by markdown approvers
+    have_roles: set[str] = set()
+    for u in approvers:
+        r = role_map.get(u)
+        if r:
+            have_roles.add(r)
+
+    # Roles covered by assignment in role_map (having someone assigned is sufficient)
+    assigned_roles = set(role_map.values())
 
     req = list(dict.fromkeys([r for r in (policy.approval_required or []) if r]))
+    for r in req:
+        if r in assigned_roles:
+            have_roles.add(r)
+
     missing = [r for r in req if r not in have_roles]
 
     # ratio: how many required roles satisfied
