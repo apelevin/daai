@@ -577,15 +577,13 @@ class Agent:
             m = (user_message or "").lower()
             # explicit verbs/commands meaning "persist/change state"
             keywords = [
-                "сохрани",
-                "сохранить",
-                "зафиксируй",
-                "зафиксировать",
-                "обнови",
-                "обновить",
+                "сохрани",       # сохрани, сохраним, сохранить, ...
+                "зафиксир",      # зафиксируй, зафиксируем, зафиксировать, ...
+                "обнови",        # обнови, обновить, обновим, ...
                 "создай контракт",
                 "создать контракт",
                 "финальная версия",
+                "финальную версию",
                 "согласован",
                 "согласовать",
                 "опубликуй финальную",
@@ -886,10 +884,15 @@ class Agent:
         except Exception as e:
             logger.warning("SAVE_CONTRACT retry failed: %s", e)
 
-        # Detect false confirmations: LLM says "saved" but nothing was actually written
+        # Detect false confirmations: LLM says "saved" but nothing was actually written.
+        # Skip if LLM says "уже зафиксирован" — that refers to a past action, not current.
         if not info["saved_contracts"]:
+            low_reply = reply.lower()
             false_confirms = ["зафиксирова", "контракт сохран", "успешно сохран", "контракт зафикс"]
-            if any(fc in reply.lower() for fc in false_confirms):
+            past_markers = ["уже зафиксирован", "уже сохранён", "уже сохранен", "был сохранён", "был сохранен"]
+            has_false_confirm = any(fc in low_reply for fc in false_confirms)
+            is_past_reference = any(pm in low_reply for pm in past_markers)
+            if has_false_confirm and not is_past_reference:
                 reply = (
                     "⚠️ Внимание: контракт НЕ был фактически сохранён на диск. "
                     "Проверь ошибки выше и повтори «зафиксируй контракт <id>».\n\n"

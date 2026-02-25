@@ -83,8 +83,7 @@ def route(llm_client, memory, username: str, message: str,
     # so side-effects are allowed.
     low = (message or "").lower()
     if any(k in low for k in [
-        "зафиксируй",
-        "зафиксировать",
+        "зафиксир",
         "сохрани",
         "сохранить",
         "финальная версия",
