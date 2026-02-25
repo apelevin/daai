@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 
-from src.router import route
+from src.router import route, HEAVY_TYPES
 from src.validator import validate_contract
 from src.metrics_tree import mark_contract_agreed
 from src.analyzer import MetricsAnalyzer, render_conflicts
@@ -19,6 +20,8 @@ from src.governance import (
     check_approval_policy,
 )
 from src.lifecycle import set_status, ensure_in_review
+from src.tool_definitions import get_read_tools, get_write_tools
+from src.tools import ToolExecutor
 
 
 logger = logging.getLogger(__name__)
@@ -480,6 +483,11 @@ class Agent:
             lines.append("\nТеперь можно повторить: `зафиксируй контракт <id>`.")
             return "\n".join(lines)
 
+        # ── Tool-use path (feature flag) ────────────────────────────────
+        if os.environ.get("AGENT_USE_TOOLS", "").lower() == "true":
+            return self._process_with_tools(username, message, channel_type, thread_context, route_data)
+
+        # ── Legacy path ──────────────────────────────────────────────────
         # 2. Load system prompt
         if route_data["model"] == "cheap":
             system_prompt = self.memory.read_file("prompts/system_short.md") or ""
@@ -515,6 +523,52 @@ class Agent:
         reply_text, _info = self._handle_side_effects(raw_response, route_data, user_message=message)
 
         return reply_text
+
+    def _process_with_tools(
+        self,
+        username: str,
+        message: str,
+        channel_type: str,
+        thread_context: str | None,
+        route_data: dict,
+    ) -> str:
+        """Process message using tool-use / function-calling path."""
+        # Load system prompt (always use full prompt for tool path)
+        system_prompt = self.memory.read_file("prompts/system_full.md") or ""
+
+        # Load context files
+        load_files = route_data.get("load_files", [])
+        context_files = self.memory.load_files(load_files) if load_files else ""
+
+        participant_profile = self.memory.get_participant(username) or ""
+        if participant_profile:
+            context_files += f"\n\n--- participants/{username}.md ---\n{participant_profile}"
+
+        full_system = system_prompt
+        if context_files:
+            full_system += "\n\n# Загруженный контекст\n\n" + context_files
+
+        # Build user message
+        user_msg = f"@{username}: {message}"
+        if thread_context:
+            user_msg = f"Контекст треда:\n{thread_context}\n\nНовое сообщение:\n{user_msg}"
+
+        # Determine available tools based on context
+        tools = get_read_tools()
+        # Only expose write tools in channel for heavy contract operations
+        is_channel = channel_type != "dm"
+        is_heavy = route_data.get("type") in HEAVY_TYPES
+        if is_channel and is_heavy:
+            tools += get_write_tools()
+
+        executor = ToolExecutor(self.memory, self.mm, self.llm)
+
+        return self.llm.call_with_tools(
+            system_prompt=full_system,
+            user_message=user_msg,
+            tools=tools,
+            tool_executor=executor.execute,
+        )
 
     def onboard_participant(self, user_id: str, username: str, display_name: str) -> None:
         """Create basic profile and send welcome DM."""

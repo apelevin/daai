@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 import time
+from typing import Callable
 
 import openai
 
@@ -42,6 +44,96 @@ class LLMClient:
             temperature=0.3,
             label="heavy",
         )
+
+    def call_with_tools(
+        self,
+        system_prompt: str,
+        user_message: str,
+        tools: list[dict],
+        tool_executor: Callable[[str, dict], dict],
+        *,
+        max_turns: int = 5,
+        max_tokens: int = 2000,
+    ) -> str:
+        """Agentic loop: LLM calls tools, gets results, generates final text.
+
+        Args:
+            system_prompt: System prompt for the LLM.
+            user_message: User message to process.
+            tools: List of tool definitions in OpenAI format.
+            tool_executor: Callable(tool_name, args) -> dict result.
+            max_turns: Maximum number of tool-calling rounds.
+            max_tokens: Max tokens per LLM call.
+
+        Returns:
+            Final text response from the LLM.
+        """
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+
+        for turn in range(max_turns):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.heavy_model,
+                    messages=messages,
+                    tools=tools if tools else openai.NOT_GIVEN,
+                    max_tokens=max_tokens,
+                    temperature=0.3,
+                )
+            except openai.RateLimitError as e:
+                logger.warning("LLM rate limit in tool loop (turn %d): %s", turn, e)
+                time.sleep(2 * (turn + 1))
+                continue
+            except openai.APIStatusError as e:
+                if e.status_code >= 500:
+                    logger.warning("LLM server error in tool loop (turn %d): %s", turn, e)
+                    time.sleep(2 * (turn + 1))
+                    continue
+                raise
+
+            choice = response.choices[0]
+            msg = choice.message
+
+            if self.log_costs and response.usage:
+                logger.info(
+                    "LLM [tools turn=%d] model=%s prompt_tokens=%d completion_tokens=%d",
+                    turn,
+                    self.heavy_model,
+                    response.usage.prompt_tokens,
+                    response.usage.completion_tokens,
+                )
+
+            # If no tool calls — LLM is done, return text
+            if not msg.tool_calls:
+                return msg.content or ""
+
+            # Append assistant message with tool calls
+            messages.append(msg)
+
+            # Execute each tool and append results
+            for tc in msg.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    args = {}
+                    logger.warning("Failed to parse tool args for %s: %s", tc.function.name, tc.function.arguments)
+
+                result = tool_executor(tc.function.name, args)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": json.dumps(result, ensure_ascii=False),
+                })
+
+        # Max turns exceeded — return whatever text we have
+        for m in reversed(messages):
+            if hasattr(m, "content") and m.content:
+                return m.content
+            if isinstance(m, dict) and m.get("content") and m.get("role") != "tool":
+                return m["content"]
+        return ""
 
     def _call(
         self,
