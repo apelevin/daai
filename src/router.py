@@ -6,6 +6,29 @@ import re
 
 logger = logging.getLogger(__name__)
 
+_TRANSLIT = {
+    'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'yo','ж':'zh',
+    'з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o',
+    'п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts',
+    'ч':'ch','ш':'sh','щ':'sch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',
+}
+
+
+def _slugify(text: str) -> str:
+    """Convert Russian text to a snake_case slug suitable for contract ID."""
+    text = text.lower().strip()
+    result = []
+    for ch in text:
+        if ch in _TRANSLIT:
+            result.append(_TRANSLIT[ch])
+        elif ch.isascii() and ch.isalnum():
+            result.append(ch)
+        elif ch in (' ', '-', '_'):
+            result.append('_')
+    slug = '_'.join(s for s in ''.join(result).split('_') if s)
+    return slug[:60]
+
+
 CHEAP_TYPES = {"contract_request", "status_request", "irrelevant"}
 HEAVY_TYPES = {
     "contract_discussion", "problem_report", "new_contract_init",
@@ -189,6 +212,12 @@ def route(llm_client, memory, username: str, message: str,
         result["model"] = "cheap"
     elif result["type"] in HEAVY_TYPES:
         result["model"] = "heavy"
+
+    # Sanitize new_contract_init: safe load_files + entity normalization
+    if result["type"] == "new_contract_init":
+        result["load_files"] = ["context/company.md", "context/metrics_tree.md"]
+        if result.get("entity") and not result["entity"].isascii():
+            result["entity"] = _slugify(result["entity"])
 
     logger.info("Router: type=%s entity=%s model=%s", result["type"], result["entity"], result["model"])
     return result

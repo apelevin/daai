@@ -324,13 +324,14 @@ class ToolExecutor:
 
     def _tool_save_draft(self, contract_id: str, content: str) -> dict:
         self.memory.save_draft(contract_id, content)
+        name = _extract_contract_name(content) or contract_id
         self.memory.update_contract_index(contract_id, {
-            "name": contract_id,
+            "name": name,
             "status": "draft",
             "file": f"drafts/{contract_id}.md",
         })
         logger.info("Saved draft: %s", contract_id)
-        return {"success": True, "contract_id": contract_id}
+        return {"success": True, "contract_id": contract_id, "name": name}
 
     def _tool_update_discussion(self, contract_id: str, discussion: dict) -> dict:
         if not isinstance(discussion, dict):

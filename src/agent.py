@@ -445,6 +445,15 @@ class Agent:
             context_files += f"\n\n--- participants/{username}.md ---\n{participant_profile}"
 
         full_system = system_prompt
+
+        # Entity anchoring: tell LLM which contract it's working on
+        entity = route_data.get("entity")
+        route_type = route_data.get("type", "")
+        if entity:
+            full_system += f"\n\n# Текущий контракт\n\nТы сейчас работаешь над контрактом: `{entity}`\n"
+            full_system += f"Тип задачи: {route_type}\n"
+            full_system += "НЕ переключайся на другие контракты, если пользователь не попросил об этом явно.\n"
+
         if context_files:
             full_system += "\n\n# Загруженный контекст\n\n" + context_files
 
