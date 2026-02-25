@@ -17,6 +17,15 @@ class FakeMemory:
 
 
 class RouterJsonExtractionTest(unittest.TestCase):
+    def test_finalize_fastpath_routes_to_contract_discussion(self):
+        raw = "{}"  # should not be used
+        llm = FakeLLM(raw)
+        mem = FakeMemory()
+        res = route(llm, mem, "u", "зафиксируй контракт client_tier_segmentation", "channel", None)
+        self.assertEqual(res["type"], "contract_discussion")
+        self.assertEqual(res["entity"], "client_tier_segmentation")
+        self.assertEqual(res["model"], "heavy")
+
     def test_parses_json_with_trailing_garbage(self):
         raw = (
             '{\n'

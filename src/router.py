@@ -61,6 +61,31 @@ def route(llm_client, memory, username: str, message: str,
         cid = m.group(1).lower()
         return {"type": "lifecycle_get_status", "entity": cid, "load_files": ["contracts/index.json"], "model": "cheap"}
 
+    # Finalize/save contract fast-path (no LLM):
+    # If the user explicitly asks to save/finalize/fix a contract, route to contract_discussion (heavy)
+    # so side-effects are allowed.
+    low = (message or "").lower()
+    if any(k in low for k in [
+        "зафиксируй",
+        "зафиксировать",
+        "сохрани",
+        "сохранить",
+        "финальная версия",
+        "опубликуй финальную",
+        "опубликовать финальную",
+    ]):
+        m = re.search(r"\b([a-z0-9_\-]{3,})\b\s*$", (message or "").strip(), re.IGNORECASE)
+        if m:
+            cid = m.group(1).lower()
+            # avoid routing common words as ids
+            if cid not in {"контракт", "версия", "финальная", "сохрани", "зафиксируй"}:
+                return {
+                    "type": "contract_discussion",
+                    "entity": cid,
+                    "load_files": ["contracts/index.json", f"drafts/{cid}.md", f"drafts/{cid}_discussion.json"],
+                    "model": "heavy",
+                }
+
     # Role assignment fast-path (no LLM):
     # Accept lines like:
     #   Data Lead — @pavelpetrin
