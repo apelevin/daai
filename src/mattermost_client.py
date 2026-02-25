@@ -145,6 +145,54 @@ class MattermostClient:
         """Get channel details."""
         return self.driver.channels.get_channel(channel_id)
 
+    def resolve_username(self, text: str) -> str | None:
+        """Resolve a human-entered mention/name into a Mattermost username.
+
+        Accepts inputs like:
+        - "@pavelpetrin" (username)
+        - "pavelpetrin" (username)
+        - "Павел Петрин" / "Никита" (display name fragments)
+
+        Returns canonical username (lowercase) or None.
+        """
+        q = (text or "").strip()
+        if not q:
+            return None
+        if q.startswith("@"):
+            q = q[1:]
+        q = q.strip()
+
+        # If it already looks like a username, trust it.
+        import re
+        if re.fullmatch(r"[a-z0-9_.\-]{3,}", q, flags=re.IGNORECASE):
+            return q.lower()
+
+        # Otherwise search users by term.
+        try:
+            users = self.driver.users.search_users({"term": q}) or []
+        except Exception:
+            return None
+
+        # Prefer exact username match (case-insensitive)
+        for u in users:
+            if isinstance(u, dict) and str(u.get("username") or "").lower() == q.lower():
+                return str(u.get("username")).lower()
+
+        # Prefer exact display name match
+        def disp(u: dict) -> str:
+            return f"{u.get('first_name','')} {u.get('last_name','')}".strip().lower()
+
+        for u in users:
+            if isinstance(u, dict) and disp(u) and disp(u) == q.lower():
+                return str(u.get("username") or "").lower() or None
+
+        # Fallback: first result with username
+        for u in users:
+            if isinstance(u, dict) and u.get("username"):
+                return str(u.get("username")).lower()
+
+        return None
+
     # ── Discovery helpers ───────────────────────────────────────────
 
     def get_teams(self) -> list[dict]:

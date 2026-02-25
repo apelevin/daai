@@ -285,7 +285,15 @@ class Agent:
                     continue
                 role, user = part.split(":", 1)
                 role = role.strip().lower()
-                user = user.strip().lstrip("@").lower()
+                user_raw = user.strip().lstrip("@")
+                # Resolve display name fragments to canonical username when possible.
+                user_resolved = None
+                try:
+                    if hasattr(self.mm, "resolve_username"):
+                        user_resolved = self.mm.resolve_username(user_raw)
+                except Exception:
+                    user_resolved = None
+                user = (user_resolved or user_raw).strip().lower()
                 if role and user:
                     pairs.append((role, user))
 

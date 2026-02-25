@@ -20,6 +20,17 @@ class FakeMM:
     def send_dm(self, *a, **kw):
         return None
 
+    def resolve_username(self, text: str):
+        # simulate mapping display names -> usernames
+        m = {
+            "павел": "pavelpetrin",
+            "павелпетрин": "pavelpetrin",
+            "павелпетрин": "pavelpetrin",
+            "никита": "korabovtsev",
+        }
+        t = (text or "").strip().lower().replace(" ", "")
+        return m.get(t)
+
 
 class FakeMemoryForRouter:
     def read_file(self, path: str):

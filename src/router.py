@@ -96,12 +96,12 @@ def route(llm_client, memory, username: str, message: str,
         if not line:
             continue
 
-        m = re.search(r"\bdata\s*lead\b\s*[—\-:]\s*@([a-z0-9_.\-]+)\b", line, re.IGNORECASE)
+        m = re.search(r"\bdata\s*lead\b\s*[—\-:]\s*@([^\s]+)", line, re.IGNORECASE)
         if m:
             assignments.append(("data_lead", m.group(1).lower()))
             continue
 
-        m = re.search(r"\bcircle\s*lead\b\s*[—\-:]\s*@([a-z0-9_.\-]+)\b", line, re.IGNORECASE)
+        m = re.search(r"\bcircle\s*lead\b\s*[—\-:]\s*@([^\s]+)", line, re.IGNORECASE)
         if m:
             assignments.append(("circle_lead", m.group(1).lower()))
             continue
