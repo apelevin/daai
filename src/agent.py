@@ -276,6 +276,50 @@ class Agent:
             self.memory.write_json("contracts/index.json", index)
             return f"✅ {cid}: статус теперь **{st}**"
 
+        if route_data.get("type") == "roles_assign":
+            ent = (route_data.get("entity") or "")
+            pairs = []
+            for part in ent.split(","):
+                part = part.strip()
+                if not part or ":" not in part:
+                    continue
+                role, user = part.split(":", 1)
+                role = role.strip().lower()
+                user = user.strip().lstrip("@").lower()
+                if role and user:
+                    pairs.append((role, user))
+
+            if not pairs:
+                return "Не понял назначения ролей. Формат: `Data Lead — @username` / `Circle Lead — @username`."
+
+            idx = self.memory.read_json("context/roles.json")
+            if not isinstance(idx, dict):
+                idx = {"roles": {}}
+            roles = idx.get("roles")
+            if not isinstance(roles, dict):
+                roles = {}
+                idx["roles"] = roles
+
+            updated = []
+            for role, user in pairs:
+                users = roles.get(role)
+                if not isinstance(users, list):
+                    users = []
+                # de-dup, lower-case
+                users_l = [str(x).lower() for x in users if isinstance(x, str)]
+                if user.lower() not in users_l:
+                    users_l.append(user.lower())
+                roles[role] = users_l
+                updated.append((role, user))
+
+            self.memory.write_json("context/roles.json", idx)
+
+            lines = ["✅ Роли обновлены (context/roles.json):", ""]
+            for role, user in updated:
+                lines.append(f"- {role}: @{user}")
+            lines.append("\nТеперь можно повторить: `зафиксируй контракт <id>`.")
+            return "\n".join(lines)
+
         # 2. Load system prompt
         if route_data["model"] == "cheap":
             system_prompt = self.memory.read_file("prompts/system_short.md") or ""

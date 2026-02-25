@@ -61,6 +61,31 @@ def route(llm_client, memory, username: str, message: str,
         cid = m.group(1).lower()
         return {"type": "lifecycle_get_status", "entity": cid, "load_files": ["contracts/index.json"], "model": "cheap"}
 
+    # Role assignment fast-path (no LLM):
+    # Accept lines like:
+    #   Data Lead — @pavelpetrin
+    #   Circle Lead - @korabovtsev
+    assignments = []
+    for line in (message or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        m = re.search(r"\bdata\s*lead\b\s*[—\-:]\s*@([a-z0-9_.\-]+)\b", line, re.IGNORECASE)
+        if m:
+            assignments.append(("data_lead", m.group(1).lower()))
+            continue
+
+        m = re.search(r"\bcircle\s*lead\b\s*[—\-:]\s*@([a-z0-9_.\-]+)\b", line, re.IGNORECASE)
+        if m:
+            assignments.append(("circle_lead", m.group(1).lower()))
+            continue
+
+    if assignments:
+        # Encode as a simple comma-separated list: role:user,role:user
+        ent = ",".join([f"{r}:{u}" for r, u in assignments])
+        return {"type": "roles_assign", "entity": ent, "load_files": ["context/roles.json"], "model": "cheap"}
+
     router_prompt = memory.read_file("prompts/router.md") or ""
 
     user_input = (
