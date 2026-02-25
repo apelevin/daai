@@ -255,9 +255,8 @@ class Agent:
                 try:
                     # If user wrote in a thread (root_id set), track that thread.
                     # If we resolved an existing thread, track that.
-                    # Otherwise, the caller (Listener) will create a new thread from post_id —
-                    # we can't register it here because we don't know the final root yet.
-                    track_root = root_id or resolved_thread_root
+                    # Otherwise, use post_id — same value Listener uses as thread root.
+                    track_root = root_id or resolved_thread_root or post_id
                     if track_root:
                         self.memory.set_active_thread(entity, track_root)
                 except Exception as e:

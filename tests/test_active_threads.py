@@ -163,6 +163,22 @@ class TestAgentProcessResult(unittest.TestCase):
         self.assertIsInstance(result, ProcessResult)
         self.assertEqual(result.thread_root_id, "existing_root")
 
+    def test_first_top_level_message_registers_thread(self):
+        """First top-level message about a contract registers post_id as active thread."""
+        agent = Agent(self.llm, self.mem, self.mm)
+        result = agent.process_message(
+            username="testuser",
+            message="обсудим headcount",
+            channel_type="channel",
+            thread_context=None,
+            post_id="first_post_id",
+            root_id=None,  # top-level, no existing thread
+        )
+        self.assertIsInstance(result, ProcessResult)
+        # post_id should be registered as the active thread
+        stored = self.mem.get_active_thread("headcount")
+        self.assertEqual(stored, "first_post_id")
+
     def test_no_entity_no_thread_redirect(self):
         """Message without entity → thread_root_id is None."""
         # Make LLM return a type without entity
