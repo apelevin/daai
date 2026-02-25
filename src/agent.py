@@ -102,6 +102,113 @@ class Agent:
         self.memory = memory
         self.mm = mattermost_client
 
+    def _handle_role_assignments_inline(self, message: str) -> str | None:
+        """Handle role assignment messages without router/LLM.
+
+        Accepts lines like:
+          Data Lead — @pavelpetrin
+          Circle Lead — @Никита Корабовцев
+
+        Persists canonical usernames to tasks/roles.json (runtime state).
+        Returns a reply string if handled, else None.
+        """
+        import re
+
+        lines = [ln.strip() for ln in (message or "").splitlines() if ln.strip()]
+        if not lines:
+            return None
+
+        role_key_by_label = {
+            "data lead": "data_lead",
+            "circle lead": "circle_lead",
+        }
+
+        pairs: list[tuple[str, str]] = []
+
+        for ln in lines:
+            m = re.match(r"^(data\s*lead|circle\s*lead)\s*[—\-:]\s*(.+)$", ln, flags=re.IGNORECASE)
+            if not m:
+                continue
+            label = re.sub(r"\s+", " ", m.group(1).strip().lower())
+            role = role_key_by_label.get(label)
+            rhs = m.group(2).strip()
+            if not role or not rhs:
+                continue
+
+            # 1) Prefer explicit @username in latin
+            m_user = re.search(r"@([a-z0-9_.\-]{3,})", rhs, flags=re.IGNORECASE)
+            if m_user:
+                pairs.append((role, m_user.group(1).lower()))
+                continue
+
+            # 2) Otherwise, try to resolve whatever comes after '@' (may contain spaces/cyrillic)
+            raw = rhs
+            if "@" in raw:
+                raw = raw.split("@", 1)[1].strip()
+            # Trim possible markdown/link artifacts
+            raw = re.sub(r"[\]\[\(\)<>]", " ", raw).strip()
+
+            resolved = None
+            try:
+                if hasattr(self.mm, "resolve_username"):
+                    resolved = self.mm.resolve_username(raw)
+            except Exception:
+                resolved = None
+
+            if resolved:
+                pairs.append((role, str(resolved).lower()))
+            else:
+                # If we detected the role label but can't resolve the user, we should respond with guidance.
+                return (
+                    "⚠️ Не смог распознать username пользователя для назначения роли.\n\n"
+                    "Пожалуйста, напиши так (латиницей, как в mention):\n"
+                    "- Circle Lead — @korabovtsev\n"
+                    "- Data Lead — @pavelpetrin"
+                )
+
+        if not pairs:
+            return None
+
+        # Merge defaults (context/roles.json) + runtime (tasks/roles.json)
+        base = self.memory.read_json("context/roles.json") or {}
+        state = self.memory.read_json("tasks/roles.json") or {}
+
+        def _roles_dict(d):
+            if isinstance(d, dict) and isinstance(d.get("roles"), dict):
+                return d.get("roles")
+            return {}
+
+        merged = {"roles": {}}
+        roles = merged["roles"]
+
+        for src in (_roles_dict(base), _roles_dict(state)):
+            for rk, users in (src or {}).items():
+                if not isinstance(rk, str) or not isinstance(users, list):
+                    continue
+                cur = roles.get(rk) or []
+                cur_l = [str(x).lower() for x in cur if isinstance(x, str)]
+                for u in users:
+                    if isinstance(u, str) and u.lower() not in cur_l:
+                        cur_l.append(u.lower())
+                roles[rk] = cur_l
+
+        updated: list[tuple[str, str]] = []
+        for role, user in pairs:
+            cur_l = roles.get(role) or []
+            cur_l = [str(x).lower() for x in cur_l if isinstance(x, str)]
+            if user.lower() not in cur_l:
+                cur_l.append(user.lower())
+            roles[role] = cur_l
+            updated.append((role, user))
+
+        self.memory.write_json("tasks/roles.json", merged)
+
+        lines_out = ["✅ Роли обновлены (tasks/roles.json):", ""]
+        for role, user in updated:
+            lines_out.append(f"- {role}: @{user}")
+        lines_out.append("\nТеперь можно повторить: `зафиксируй контракт <id>`." )
+        return "\n".join(lines_out)
+
     def process_message(
         self,
         username: str,
@@ -111,6 +218,15 @@ class Agent:
         post_id: str | None = None,
     ) -> str:
         """Process an incoming message and return reply text."""
+        # 0. Role assignment messages (fast-path, no LLM)
+        try:
+            fast = self._handle_role_assignments_inline(message)
+            if fast:
+                return fast
+        except Exception:
+            # best-effort; fall back to normal flow
+            pass
+
         # 1. Route
         route_data = route(self.llm, self.memory, username, message, channel_type, thread_context)
         # keep channel type for side-effect policy

@@ -54,9 +54,8 @@ class RolesAssignPersistenceTest(unittest.TestCase):
             mem.write_json("tasks/roles.json", {"roles": {}})
             agent = Agent(FakeLLM(), mem, FakeMM())
 
-            route_data = {"type": "roles_assign", "entity": "data_lead:pavelpetrin,circle_lead:korabovtsev", "channel_type": "channel"}
             out = agent.process_message("pelevin", "Data Lead — @pavelpetrin\nCircle Lead — @korabovtsev", "channel", None, None)
-            self.assertIn("roles.json", out)
+            self.assertIn("tasks/roles.json", out)
 
             roles = mem.read_json("tasks/roles.json")
             self.assertEqual(roles["roles"]["data_lead"], ["pavelpetrin"])
