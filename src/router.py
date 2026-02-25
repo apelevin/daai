@@ -70,17 +70,36 @@ def route(llm_client, memory, username: str, message: str,
     if thread_context:
         user_input += f"\nКонтекст треда:\n{thread_context}\n"
 
+    def _extract_json(text: str) -> dict:
+        """Best-effort extract JSON object from model output.
+
+        The cheap router sometimes returns valid JSON with trailing text.
+        We take the first '{' and last '}' and try to parse that slice.
+        """
+        t = (text or "").strip()
+        if t.startswith("```"):
+            # Strip markdown code block
+            lines = t.split("\n")
+            t = "\n".join(lines[1:-1] if lines and lines[-1].startswith("```") else lines[1:])
+            t = t.strip()
+
+        # Fast path
+        try:
+            return json.loads(t)
+        except Exception:
+            pass
+
+        i = t.find("{")
+        j = t.rfind("}")
+        if i >= 0 and j > i:
+            return json.loads(t[i : j + 1])
+        return json.loads(t)  # will raise
+
     try:
         raw = llm_client.call_cheap(router_prompt, user_input)
-        # Extract JSON from response (model may wrap it in markdown)
-        raw = raw.strip()
-        if raw.startswith("```"):
-            # Strip markdown code block
-            lines = raw.split("\n")
-            raw = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
-        data = json.loads(raw)
+        data = _extract_json(raw)
     except (json.JSONDecodeError, Exception) as e:
-        logger.warning("Router failed to parse JSON: %s — raw: %s", e, raw[:200] if 'raw' in dir() else "N/A")
+        logger.warning("Router failed to parse JSON: %s — raw: %s", e, (raw or "")[:200])
         data = {
             "type": "general_question",
             "entity": None,
