@@ -308,7 +308,7 @@ class Agent:
             raw_response = self.llm.call_heavy(full_system, user_msg)
 
         # 6. Parse side effects and clean reply
-        reply_text = self._handle_side_effects(raw_response, route_data, user_message=message)
+        reply_text, _info = self._handle_side_effects(raw_response, route_data, user_message=message)
 
         return reply_text
 
@@ -346,13 +346,26 @@ class Agent:
         except Exception as e:
             logger.error("Failed to send onboard DM to %s: %s", username, e)
 
-    def _handle_side_effects(self, raw_response: str, route_data: dict, user_message: str = "") -> str:
+    def _handle_side_effects(self, raw_response: str, route_data: dict, user_message: str = "") -> tuple[str, dict]:
         """Parse side-effect blocks from LLM output, execute them, return clean text.
+
+        Returns: (reply_text, info)
+        info keys:
+          - can_write: bool
+          - saved_contracts: list[str]
+          - saved_drafts: list[str]
+          - saved_decisions: int
 
         Safety rule: SAVE_CONTRACT/SAVE_DRAFT/SAVE_DECISION must happen only when the user explicitly asks
         to save/fix/update/create a contract (to avoid accidental writes during Q&A in threads).
         """
         reply = raw_response
+        info = {
+            "can_write": False,
+            "saved_contracts": [],
+            "saved_drafts": [],
+            "saved_decisions": 0,
+        }
 
         def allow_contract_write() -> bool:
             m = (user_message or "").lower()
@@ -386,6 +399,7 @@ class Agent:
             return explicit and type_ok
 
         can_write = allow_contract_write()
+        info["can_write"] = can_write
 
         # SAVE_CONTRACT
         for match in SIDE_EFFECT_PATTERNS["SAVE_CONTRACT"].finditer(raw_response):
@@ -407,7 +421,7 @@ class Agent:
                     "Что поправить:\n"
                     f"{bullets}{more}\n\n"
                     "После правок напиши: «сохрани финальную версию» или «зафиксируй контракт»."
-                ).strip()
+                ).strip(), info
 
             # Governance tier approvals (MVP): if governance.json declares required roles for this tier,
             # enforce that the approvers listed in "## Согласовано" include all required roles for tier_1.
@@ -449,7 +463,7 @@ class Agent:
                             f"⚠️ Контракт не сохраняю: не выполнена политика согласования ({tier_key}).\n\n"
                             f"Не хватает ролей: {missing}.\n"
                             "Добавь нужных согласующих в секцию «## Согласовано», затем повтори: «зафиксируй контракт»."
-                        ).strip()
+                        ).strip(), info
             except Exception:
                 pass
 
@@ -464,12 +478,13 @@ class Agent:
                         "⚠️ Контракт не сохраняю: нужно уточнение терминов по глоссарию.\n\n"
                         f"{bullets}\n\n"
                         "Ответь в треде, и я обновлю текст (или ты обновишь вручную, затем: «зафиксируй контракт»)."
-                    ).strip()
+                    ).strip(), info
             except Exception:
                 # If glossary missing/invalid, do not block
                 pass
 
             self.memory.save_contract(contract_id, content)
+            info["saved_contracts"].append(contract_id)
             name = _extract_contract_name(content) or contract_id
 
             # Best-effort: detect and store relationships
@@ -538,6 +553,7 @@ class Agent:
                 continue
             contract_id, content = match.group(1), match.group(2).strip()
             self.memory.save_draft(contract_id, content)
+            info["saved_drafts"].append(contract_id)
             self.memory.update_contract_index(contract_id, {
                 "name": contract_id,
                 "status": "draft",
@@ -586,9 +602,48 @@ class Agent:
             try:
                 decision = json.loads(content)
                 self.memory.save_decision(decision)
+                info["saved_decisions"] += 1
                 logger.info("Saved decision for %s", decision.get("contract"))
             except json.JSONDecodeError:
                 logger.error("Invalid JSON in SAVE_DECISION")
             reply = reply.replace(match.group(0), "")
 
-        return reply.strip()
+        # If the user explicitly asked to save/finalize, but the model didn't emit SAVE_CONTRACT,
+        # do a retry call that *must* output a SAVE_CONTRACT block based on the latest draft + discussion.
+        try:
+            explicit_save = can_write
+            entity = (route_data.get("entity") or "").strip().lower()
+            needs_contract = route_data.get("type") in {"contract_discussion", "new_contract_init", "problem_report"}
+            if explicit_save and needs_contract and entity and not info["saved_contracts"]:
+                draft = self.memory.get_draft(entity) or ""
+                discussion = self.memory.get_discussion(entity) or {}
+                system = (
+                    "Ты помощник по Data Contracts. Тебе нужно строго выполнить сохранение контракта. "
+                    "Ответь ТОЛЬКО блоком SAVE_CONTRACT в формате:\n"
+                    "[SAVE_CONTRACT:<id>]\n<markdown контракта>\n[/SAVE_CONTRACT]\n\n"
+                    "Без дополнительного текста. Контракт должен пройти детерминированную валидацию. "
+                    "Обязательные секции (каждая непустая):\n"
+                    "- ## Статус\n- ## Определение\n- ## Формула\n- ## Источник данных\n- ## Включает\n- ## Исключения\n- ## Гранулярность\n"
+                    "- ## Ответственный за данные\n- ## Ответственный за расчёт\n- ## Связь с Extra Time\n- ## Потребители\n- ## Состояние данных\n- ## Известные проблемы\n"
+                    "- ## Связанные контракты\n- ## Согласовано\n- ## История изменений\n\n"
+                    "Требования к секции «Формула»: обязательно добавь строку 'Человеческая: ...' и блок 'Псевдо‑SQL: ...'.\n"
+                    "Требования к «Связь с Extra Time»: обязательно путь вида 'X → ... → Extra Time' (с символом стрелки →)."
+                )
+                user = (
+                    f"Contract id: {entity}\n\n"
+                    f"Последний черновик (drafts/{entity}.md):\n{draft}\n\n"
+                    f"Сводка обсуждения (drafts/{entity}_discussion.json):\n{json.dumps(discussion, ensure_ascii=False, indent=2)}\n\n"
+                    "Сгенерируй финальную версию и сохрани её через SAVE_CONTRACT."
+                )
+                retry_raw = self.llm.call_heavy(system, user)
+                # recurse once: parse retry output and execute
+                retry_reply, retry_info = self._handle_side_effects(retry_raw, route_data, user_message=user_message)
+                # merge info
+                info["saved_contracts"].extend(retry_info.get("saved_contracts") or [])
+                info["saved_decisions"] += int(retry_info.get("saved_decisions") or 0)
+                # Prefer retry reply if it contains any user-visible content (normally empty)
+                reply = retry_reply or reply
+        except Exception as e:
+            logger.warning("SAVE_CONTRACT retry failed: %s", e)
+
+        return reply.strip(), info
