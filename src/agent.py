@@ -292,7 +292,10 @@ class Agent:
             if not pairs:
                 return "Не понял назначения ролей. Формат: `Data Lead — @username` / `Circle Lead — @username`."
 
-            idx = self.memory.read_json("context/roles.json")
+            # Read runtime roles state from tasks/roles.json (writable). Fallback to context/roles.json defaults.
+            idx = self.memory.read_json("tasks/roles.json")
+            if idx is None:
+                idx = self.memory.read_json("context/roles.json")
             if not isinstance(idx, dict):
                 idx = {"roles": {}}
             roles = idx.get("roles")
@@ -312,9 +315,10 @@ class Agent:
                 roles[role] = users_l
                 updated.append((role, user))
 
-            self.memory.write_json("context/roles.json", idx)
+            # Persist ONLY to tasks/roles.json (runtime writable state)
+            self.memory.write_json("tasks/roles.json", idx)
 
-            lines = ["✅ Роли обновлены (context/roles.json):", ""]
+            lines = ["✅ Роли обновлены (tasks/roles.json):", ""]
             for role, user in updated:
                 lines.append(f"- {role}: @{user}")
             lines.append("\nТеперь можно повторить: `зафиксируй контракт <id>`.")
@@ -489,7 +493,21 @@ class Agent:
                         consensus_threshold=float(tier_cfg.get("consensus_threshold") or 1.0),
                     )
 
-                    roles = self.memory.read_json("context/roles.json") or {}
+                    # Roles: merge read-only defaults (context/roles.json) with runtime state (tasks/roles.json)
+                    roles_ctx = self.memory.read_json("context/roles.json") or {}
+                    roles_state = self.memory.read_json("tasks/roles.json") or {}
+                    roles = {"roles": {}}
+                    for src in (roles_ctx, roles_state):
+                        if isinstance(src, dict) and isinstance(src.get("roles"), dict):
+                            for rk, users in src.get("roles").items():
+                                if not isinstance(rk, str) or not isinstance(users, list):
+                                    continue
+                                cur = roles["roles"].get(rk) or []
+                                cur_l = [str(x).lower() for x in cur if isinstance(x, str)]
+                                for u in users:
+                                    if isinstance(u, str) and u.lower() not in cur_l:
+                                        cur_l.append(u.lower())
+                                roles["roles"][rk] = cur_l
                     role_map = {}
                     roles_dict = roles.get("roles") if isinstance(roles, dict) else None
                     if isinstance(roles_dict, dict):

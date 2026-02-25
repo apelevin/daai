@@ -109,7 +109,8 @@ def route(llm_client, memory, username: str, message: str,
     if assignments:
         # Encode as a simple comma-separated list: role:user,role:user
         ent = ",".join([f"{r}:{u}" for r, u in assignments])
-        return {"type": "roles_assign", "entity": ent, "load_files": ["context/roles.json"], "model": "cheap"}
+        # Persist roles in tasks/roles.json (writable runtime state). context/roles.json is treated as read-only defaults.
+        return {"type": "roles_assign", "entity": ent, "load_files": ["tasks/roles.json", "context/roles.json"], "model": "cheap"}
 
     router_prompt = memory.read_file("prompts/router.md") or ""
 
