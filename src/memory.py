@@ -4,12 +4,15 @@ import json
 import logging
 import os
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
 
 class Memory:
+    _ACTIVE_THREADS_FILE = "tasks/active_threads.json"
+    _THREAD_TTL_DAYS = 7
+
     def __init__(self):
         self.base_dir = os.environ.get("DATA_DIR", ".")
 
@@ -318,6 +321,44 @@ class Memory:
     def save_queue(self, queue: list[dict]) -> None:
         """Save contract queue."""
         self.write_json("tasks/queue.json", {"queue": queue})
+
+    # ── Active threads ────────────────────────────────────────────────
+
+    def get_active_thread(self, contract_id: str) -> str | None:
+        """Return root_post_id of active thread for contract, or None if expired/missing."""
+        data = self.read_json(self._ACTIVE_THREADS_FILE)
+        if not isinstance(data, dict):
+            return None
+        threads = data.get("threads")
+        if not isinstance(threads, dict):
+            return None
+        entry = threads.get(contract_id)
+        if not isinstance(entry, dict):
+            return None
+        updated_at = entry.get("updated_at")
+        if updated_at:
+            try:
+                dt = datetime.fromisoformat(updated_at)
+                if datetime.now(timezone.utc) - dt > timedelta(days=self._THREAD_TTL_DAYS):
+                    return None
+            except (ValueError, TypeError):
+                pass
+        return entry.get("root_post_id") or None
+
+    def set_active_thread(self, contract_id: str, root_post_id: str) -> None:
+        """Register or update the active thread for a contract."""
+        data = self.read_json(self._ACTIVE_THREADS_FILE)
+        if not isinstance(data, dict):
+            data = {"threads": {}}
+        threads = data.get("threads")
+        if not isinstance(threads, dict):
+            threads = {}
+            data["threads"] = threads
+        threads[contract_id] = {
+            "root_post_id": root_post_id,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.write_json(self._ACTIVE_THREADS_FILE, data)
 
     # ── Load multiple files for context ─────────────────────────────
 

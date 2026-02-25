@@ -236,14 +236,17 @@ class Listener:
             channel_type,
             message[:100],
         )
+        result = None
         try:
-            reply = self.agent.process_message(
+            result = self.agent.process_message(
                 username=username,
                 message=message,
                 channel_type=channel_type,
                 thread_context=thread_context,
                 post_id=post_id,
+                root_id=root_id,
             )
+            reply = result.reply
         except Exception as e:
             logger.error("Agent failed to process message: %s", e, exc_info=True)
             reply = "Произошла ошибка при обработке сообщения. Попробуй ещё раз."
@@ -262,8 +265,8 @@ class Listener:
                 logger.info("Sending DM reply to user_id=%s (post_id=%s) len=%s", user_id, post_id, len(reply))
                 self.mm.send_dm(user_id, reply)
             else:
-                # Reply in thread (use root_id if exists, otherwise start thread from this post)
-                thread_root = root_id or post_id
+                # Reply in thread: prefer active thread from agent, then original root, then this post
+                thread_root = (result.thread_root_id if result else None) or root_id or post_id
                 logger.info(
                     "Sending channel reply root=%s (inbound post_id=%s) len=%s preview=%r",
                     thread_root,

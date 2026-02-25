@@ -38,9 +38,9 @@ class DisplayNameResolutionTest(unittest.TestCase):
 
             agent = Agent(FakeLLM(), mem, FakeMM())
             msg = "Circle Lead — @Никита Корабовцев\nData Lead — @Павел Петрин"
-            out = agent.process_message("pelevin", msg, "channel", None, None)
+            result = agent.process_message("pelevin", msg, "channel", None, None)
 
-            self.assertIn("✅ Роли обновлены", out)
+            self.assertIn("✅ Роли обновлены", result.reply)
             roles = mem.read_json("tasks/roles.json")
             self.assertEqual(roles["roles"]["circle_lead"], ["korabovtsev"])
             self.assertEqual(roles["roles"]["data_lead"], ["pavelpetrin"])

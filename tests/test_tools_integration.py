@@ -240,7 +240,7 @@ class TestToolUseIntegration(unittest.TestCase):
         self.assertIsNone(self.mem.get_contract("lead_conversion"))
 
         # Reply should mention the problem (from scripted LLM)
-        self.assertIn("НЕ сохранён", reply)
+        self.assertIn("НЕ сохранён", reply.reply)
 
     def test_scenario_2_validation_failure(self):
         """User asks to save incomplete contract → validation errors reported."""
@@ -320,7 +320,7 @@ class TestToolUseIntegration(unittest.TestCase):
         self.assertEqual(rec["status"], "agreed")
 
         # Reply confirms save
-        self.assertIn("сохранён", reply)
+        self.assertIn("сохранён", reply.reply)
 
     def test_scenario_4_retry_after_role_assignment(self):
         """LLM tries save, fails on governance, assigns role, retries → success."""

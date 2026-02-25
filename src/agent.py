@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from src.router import route, HEAVY_TYPES
@@ -39,11 +40,39 @@ PARTICIPANT_TEMPLATE = """# {display_name} (@{username})
 """
 
 
+@dataclass
+class ProcessResult:
+    reply: str
+    thread_root_id: str | None = None
+
+
+# Route types that should be tracked to active threads
+THREAD_TRACKING_TYPES = {"contract_discussion", "new_contract_init", "problem_report"}
+
+
 class Agent:
     def __init__(self, llm_client, memory, mattermost_client):
         self.llm = llm_client
         self.memory = memory
         self.mm = mattermost_client
+
+    def _build_thread_context(self, thread_posts: list[dict], exclude_post_id: str | None = None) -> str | None:
+        """Build thread context string from a list of thread posts."""
+        context_parts = []
+        for tp in thread_posts:
+            if exclude_post_id and tp.get("id") == exclude_post_id:
+                continue
+            tp_user_id = tp.get("user_id", "")
+            if tp_user_id == self.mm.bot_user_id:
+                tp_name = "AI-архитектор"
+            else:
+                try:
+                    tp_info = self.mm.get_user_info(tp_user_id)
+                    tp_name = f"@{tp_info['username']}"
+                except Exception:
+                    tp_name = "unknown"
+            context_parts.append(f"{tp_name}: {tp['message']}")
+        return "\n".join(context_parts) if context_parts else None
 
     def _handle_role_assignments_inline(self, message: str) -> str | None:
         """Handle role assignment messages without router/LLM.
@@ -175,13 +204,14 @@ class Agent:
         channel_type: str,
         thread_context: str | None,
         post_id: str | None = None,
-    ) -> str:
-        """Process an incoming message and return reply text."""
+        root_id: str | None = None,
+    ) -> ProcessResult:
+        """Process an incoming message and return ProcessResult."""
         # 0. Role assignment messages (fast-path, no LLM)
         try:
             fast = self._handle_role_assignments_inline(message)
             if fast:
-                return fast
+                return ProcessResult(reply=fast)
         except Exception:
             # best-effort; fall back to normal flow
             pass
@@ -190,6 +220,21 @@ class Agent:
         route_data = route(self.llm, self.memory, username, message, channel_type, thread_context)
         # keep channel type for side-effect policy
         route_data["channel_type"] = channel_type
+
+        # 2. Active thread lookup for top-level messages in channel
+        entity = (route_data.get("entity") or "").strip().lower()
+        resolved_thread_root: str | None = None
+
+        if not root_id and entity and channel_type == "channel":
+            try:
+                existing_root = self.memory.get_active_thread(entity)
+                if existing_root:
+                    # Load thread context from the existing thread
+                    thread_posts = self.mm.get_thread(existing_root)
+                    thread_context = self._build_thread_context(thread_posts, exclude_post_id=post_id)
+                    resolved_thread_root = existing_root
+            except Exception as e:
+                logger.warning("Failed to load active thread for %s: %s", entity, e)
 
         # Lifecycle MVP: when a contract enters discussion/init, auto move draft->in_review
         try:
@@ -203,12 +248,28 @@ class Agent:
         except Exception:
             pass
 
+        # Helper to wrap reply and register thread before returning
+        def _result(reply: str) -> ProcessResult:
+            # Register active thread for discussion-related types
+            if entity and route_data.get("type") in THREAD_TRACKING_TYPES:
+                try:
+                    # If user wrote in a thread (root_id set), track that thread.
+                    # If we resolved an existing thread, track that.
+                    # Otherwise, the caller (Listener) will create a new thread from post_id —
+                    # we can't register it here because we don't know the final root yet.
+                    track_root = root_id or resolved_thread_root
+                    if track_root:
+                        self.memory.set_active_thread(entity, track_root)
+                except Exception as e:
+                    logger.warning("Failed to register active thread for %s: %s", entity, e)
+            return ProcessResult(reply=reply, thread_root_id=resolved_thread_root)
+
         # Fast-path: contract history/version rendering without LLM
         if route_data.get("type") == "contract_history":
             cid = route_data.get("entity")
             items = self.memory.get_contract_history(cid) if cid else []
             if not items:
-                return f"История версий для контракта `{cid}` не найдена. (Нет history.jsonl)"
+                return _result(f"История версий для контракта `{cid}` не найдена. (Нет history.jsonl)")
             # newest last in our history.jsonl; show tail
             tail = items[-10:]
             lines = [f"История версий `{cid}` (последние {len(tail)}):", ""]
@@ -216,36 +277,36 @@ class Agent:
                 sha = (it.get("sha256") or "")[:12]
                 lines.append(f"- `{it.get('ts')}` — {it.get('kind')} — sha {sha} — {it.get('bytes')} bytes")
             lines.append("\nЧтобы посмотреть конкретную версию: `покажи версию <contract_id> <ts>`")
-            return "\n".join(lines)
+            return _result("\n".join(lines))
 
         if route_data.get("type") == "contract_version":
             ent = route_data.get("entity") or ""
             if ":" not in ent:
-                return "Неверный формат. Используй: `покажи версию <contract_id> <ts>`"
+                return _result("Неверный формат. Используй: `покажи версию <contract_id> <ts>`")
             cid, ts = ent.split(":", 1)
             md = self.memory.get_contract_version(cid, ts)
             if not md:
-                return f"Версия не найдена: `{cid}` `{ts}`"
-            return f"Версия `{cid}` `{ts}`:\n\n```markdown\n{md}\n```"
+                return _result(f"Версия не найдена: `{cid}` `{ts}`")
+            return _result(f"Версия `{cid}` `{ts}`:\n\n```markdown\n{md}\n```")
 
         if route_data.get("type") == "show_contract":
             cid = (route_data.get("entity") or "").strip().lower()
             md = self.memory.read_file(f"contracts/{cid}.md")
             if not md:
-                return f"Контракт `{cid}` не найден на диске (contracts/{cid}.md)."
-            return f"📋 Контракт `{cid}`:\n\n```markdown\n{md}\n```"
+                return _result(f"Контракт `{cid}` не найден на диске (contracts/{cid}.md).")
+            return _result(f"📋 Контракт `{cid}`:\n\n```markdown\n{md}\n```")
 
         if route_data.get("type") == "show_draft":
             cid = (route_data.get("entity") or "").strip().lower()
             md = self.memory.read_file(f"drafts/{cid}.md")
             if not md:
-                return f"Черновик `{cid}` не найден на диске (drafts/{cid}.md)."
-            return f"📝 Черновик `{cid}`:\n\n```markdown\n{md}\n```"
+                return _result(f"Черновик `{cid}` не найден на диске (drafts/{cid}.md).")
+            return _result(f"📝 Черновик `{cid}`:\n\n```markdown\n{md}\n```")
 
         if route_data.get("type") == "conflicts_audit":
             analyzer = MetricsAnalyzer(self.memory)
             conflicts = analyzer.detect_conflicts()
-            return render_conflicts(conflicts)
+            return _result(render_conflicts(conflicts))
 
         if route_data.get("type") == "relationships_show":
             cid = (route_data.get("entity") or "").strip().lower()
@@ -262,7 +323,7 @@ class Agent:
 
             rels = [r for r in items if isinstance(r, dict) and (str(r.get("from") or "").lower()==cid or str(r.get("to") or "").lower()==cid)]
             if not rels:
-                return f"Связей для `{cid}` не найдено."
+                return _result(f"Связей для `{cid}` не найдено.")
 
             title = name_map.get(cid, cid)
             lines = [f"🔗 Связи для `{cid}` ({title}):", ""]
@@ -280,18 +341,18 @@ class Agent:
             if len(rels) > 30:
                 lines.append(f"…и ещё {len(rels)-30}")
 
-            return "\n".join(lines)
+            return _result("\n".join(lines))
 
         if route_data.get("type") == "governance_review_audit":
             items = find_contracts_requiring_review(self.memory.list_contracts())
-            return render_review_report(items)
+            return _result(render_review_report(items))
 
         if route_data.get("type") == "governance_policy_show":
             tier_key = (route_data.get("entity") or "").strip().lower()
             gov = self.memory.read_json("context/governance.json") or {}
             tiers = gov.get("tiers") if isinstance(gov, dict) else None
             if not isinstance(tiers, dict) or tier_key not in tiers:
-                return f"Политика `{tier_key}` не найдена."
+                return _result(f"Политика `{tier_key}` не найдена.")
             cfg = tiers.get(tier_key) or {}
             req = cfg.get("approval_required") or []
             thr = cfg.get("consensus_threshold")
@@ -314,7 +375,7 @@ class Agent:
                     if isinstance(users, list):
                         u = ", ".join([f"@{x}" for x in users if isinstance(x, str)])
                         lines.append(f"- {role}: {u or '(не назначено)'}")
-            return "\n".join(lines)
+            return _result("\n".join(lines))
 
         if route_data.get("type") == "governance_requirements_for":
             cid = (route_data.get("entity") or "").strip().lower()
@@ -328,7 +389,7 @@ class Agent:
             tiers = gov.get("tiers") if isinstance(gov, dict) else None
             cfg = tiers.get(tier_key) if isinstance(tiers, dict) else None
             if not isinstance(cfg, dict):
-                return f"Не нашёл политику для `{cid}` (tier={tier_key})."
+                return _result(f"Не нашёл политику для `{cid}` (tier={tier_key}).")
 
             req = cfg.get("approval_required") or []
             thr = cfg.get("consensus_threshold")
@@ -340,7 +401,7 @@ class Agent:
             lines.append(f"Роли: {', '.join(req) if req else '(нет)'}")
             lines.append(f"Порог: {thr}")
             lines.append("\nПодсказка: добавь согласующих в секцию `## Согласовано` как `@username — дата`.")
-            return "\n".join(lines)
+            return _result("\n".join(lines))
 
         if route_data.get("type") == "lifecycle_get_status":
             cid = (route_data.get("entity") or "").strip().lower()
@@ -350,20 +411,20 @@ class Agent:
                     status = c.get("status")
                     break
             if not status:
-                return f"Статус для `{cid}` не найден."
-            return f"Статус `{cid}`: **{status}**"
+                return _result(f"Статус для `{cid}` не найден.")
+            return _result(f"Статус `{cid}`: **{status}**")
 
         if route_data.get("type") == "lifecycle_set_status":
             ent = (route_data.get("entity") or "")
             if ":" not in ent:
-                return "Неверный формат. Используй: `поставь статус <id> <draft|in_review|approved|active|deprecated|archived>`"
+                return _result("Неверный формат. Используй: `поставь статус <id> <draft|in_review|approved|active|deprecated|archived>`")
             cid, st = ent.split(":", 1)
             index = self.memory.read_json("contracts/index.json") or {"contracts": []}
             res = set_status(index, cid, st)
             if not res.ok:
-                return f"Не получилось: {res.message}"
+                return _result(f"Не получилось: {res.message}")
             self.memory.write_json("contracts/index.json", index)
-            return f"✅ {cid}: статус теперь **{st}**"
+            return _result(f"✅ {cid}: статус теперь **{st}**")
 
         if route_data.get("type") == "roles_assign":
             ent = (route_data.get("entity") or "")
@@ -387,7 +448,7 @@ class Agent:
                     pairs.append((role, user))
 
             if not pairs:
-                return "Не понял назначения ролей. Формат: `Data Lead — @username` / `Circle Lead — @username`."
+                return _result("Не понял назначения ролей. Формат: `Data Lead — @username` / `Circle Lead — @username`.")
 
             # Read runtime roles state from tasks/roles.json (writable). Fallback to context/roles.json defaults.
             idx = self.memory.read_json("tasks/roles.json")
@@ -419,10 +480,11 @@ class Agent:
             for role, user in updated:
                 lines.append(f"- {role}: @{user}")
             lines.append("\nТеперь можно повторить: `зафиксируй контракт <id>`.")
-            return "\n".join(lines)
+            return _result("\n".join(lines))
 
         # ── Tool-use path ────────────────────────────────────────────────
-        return self._process_with_tools(username, message, channel_type, thread_context, route_data)
+        reply = self._process_with_tools(username, message, channel_type, thread_context, route_data)
+        return _result(reply)
 
     def _process_with_tools(
         self,
