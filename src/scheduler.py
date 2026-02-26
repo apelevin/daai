@@ -27,8 +27,9 @@ class Scheduler:
         """Start the scheduler loop in the current thread."""
         schedule.every(self.reminder_hours).hours.do(self._check_reminders)
         schedule.every().friday.at("17:00").do(self._weekly_digest)
+        schedule.every().tuesday.at("10:00").do(self._coverage_scan)
 
-        logger.info("Scheduler started: reminders every %dh, digest Fri 17:00", self.reminder_hours)
+        logger.info("Scheduler started: reminders every %dh, digest Fri 17:00, coverage scan Tue 10:00", self.reminder_hours)
 
         while True:
             schedule.run_pending()
@@ -217,6 +218,31 @@ class Scheduler:
                 self.mm.send_to_channel(message)
         except Exception as e:
             logger.error("Failed to send reminder: %s", e)
+
+    def _coverage_scan(self):
+        """Periodic scan: find uncovered metrics and suggest contracts."""
+        try:
+            from src.suggestion_engine import SuggestionEngine
+
+            engine = SuggestionEngine(self.memory, self.llm)
+            if not engine.can_suggest_today():
+                logger.info("Coverage scan: rate limit reached, skipping")
+                return
+
+            candidates = engine.coverage_scan()
+            candidates = engine.filter_already_suggested(candidates)
+            if not candidates:
+                logger.info("Coverage scan: no new candidates")
+                return
+
+            msg = engine.format_coverage_message(candidates[:5])
+            if msg:
+                resp = self.mm.send_to_channel(msg)
+                engine.record_suggestion(candidates[:2], "coverage_scan", resp.get("id"))
+                logger.info("Coverage scan: suggested %d candidates", min(len(candidates), 5))
+
+        except Exception as e:
+            logger.error("Error in coverage_scan: %s", e, exc_info=True)
 
     def _weekly_digest(self):
         """Generate and publish weekly digest."""

@@ -318,6 +318,22 @@ class ToolExecutor:
         except Exception:
             pass
 
+        # Best-effort: suggest next contract (proactive)
+        try:
+            from src.suggestion_engine import SuggestionEngine
+            engine = SuggestionEngine(self.memory, self.llm)
+            if engine.can_suggest_today():
+                candidates = engine.suggest_after_agreement(contract_id)
+                candidates = engine.filter_already_suggested(candidates)
+                if candidates:
+                    use_poll = len(candidates) > 1
+                    msg = engine.format_suggestion_message(candidates[:2], f"agreed:{contract_id}", use_poll=use_poll)
+                    if self.mm and msg:
+                        resp = self.mm.send_to_channel(msg)
+                        engine.record_suggestion(candidates[:2], f"agreed:{contract_id}", resp.get("id"))
+        except Exception as e:
+            logger.warning("Post-agreement suggestion failed: %s", e)
+
         logger.info("Saved contract: %s", contract_id)
         return {
             "success": True,
@@ -400,6 +416,19 @@ class ToolExecutor:
         self.memory.write_json("tasks/roles.json", idx)
         logger.info("Assigned role %s to %s", role, username)
         return {"success": True, "role": role, "username": username}
+
+    def _tool_create_poll(self, question: str, options: list, channel_id: str = "") -> dict:
+        if not self.mm:
+            return {"error": "Mattermost client not available"}
+        if not isinstance(options, list) or len(options) < 2:
+            return {"error": "options must be a list with at least 2 items"}
+        cid = channel_id or (self.mm.channel_id if hasattr(self.mm, "channel_id") else "")
+        if not cid:
+            return {"error": "channel_id is required"}
+        result = self.mm.create_poll(cid, question, options)
+        if isinstance(result, dict) and result.get("error"):
+            return {"success": False, "error": result["error"]}
+        return {"success": True}
 
     def _tool_set_contract_status(self, contract_id: str, status: str) -> dict:
         index = self.memory.read_json("contracts/index.json") or {"contracts": []}

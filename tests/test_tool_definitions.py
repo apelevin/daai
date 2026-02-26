@@ -27,7 +27,7 @@ class ToolDefinitionsTest(unittest.TestCase):
         self.assertEqual(len(get_read_tools()), 8)
 
     def test_write_tools_count(self):
-        self.assertEqual(len(get_write_tools()), 8)
+        self.assertEqual(len(get_write_tools()), 9)
 
     def test_required_params_are_in_properties(self):
         for tool in get_all_tools():
@@ -49,7 +49,7 @@ class ToolDefinitionsTest(unittest.TestCase):
         expected_write = {
             "save_contract", "save_draft", "update_discussion",
             "add_reminder", "update_participant", "save_decision",
-            "assign_role", "set_contract_status",
+            "assign_role", "set_contract_status", "create_poll",
         }
         read_names = {t["function"]["name"] for t in get_read_tools()}
         write_names = {t["function"]["name"] for t in get_write_tools()}

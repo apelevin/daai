@@ -322,6 +322,19 @@ class Memory:
         """Save contract queue."""
         self.write_json("tasks/queue.json", {"queue": queue})
 
+    # ── Suggestions ─────────────────────────────────────────────────
+
+    def get_suggestions(self) -> list[dict]:
+        """Get all suggestions from tasks/suggestions.json."""
+        data = self.read_json("tasks/suggestions.json")
+        if data and "suggestions" in data:
+            return data["suggestions"]
+        return []
+
+    def save_suggestions(self, suggestions: list[dict]) -> None:
+        """Save suggestions list."""
+        self.write_json("tasks/suggestions.json", {"suggestions": suggestions})
+
     # ── Active threads ────────────────────────────────────────────────
 
     def get_active_thread(self, contract_id: str) -> str | None:

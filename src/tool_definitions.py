@@ -211,6 +211,26 @@ WRITE_TOOLS: list[dict] = [
             "required": ["contract_id", "status"],
         },
     ),
+    _tool(
+        "create_poll",
+        "Создаёт опрос через Matterpoll. Используй когда нужно голосование: "
+        "приоритизация контрактов, развилки в обсуждении, подтверждение консенсуса.",
+        {
+            "properties": {
+                "question": {"type": "string", "description": "Вопрос для голосования"},
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Варианты ответа (2-5 штук)",
+                },
+                "channel_id": {
+                    "type": "string",
+                    "description": "ID канала (по умолчанию — Data Contracts канал)",
+                },
+            },
+            "required": ["question", "options"],
+        },
+    ),
 ]
 
 
