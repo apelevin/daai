@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import time
 from typing import Callable
 
@@ -9,6 +10,26 @@ import openai
 from src.config import LLM_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
+
+_INVOKE_RE = re.compile(r'<invoke\s+name="([^"]+)">\s*(.*?)</invoke>', re.DOTALL)
+_PARAM_RE = re.compile(r'<parameter\s+name="([^"]+)">(.*?)</parameter>', re.DOTALL)
+
+
+def _parse_xml_tool_calls(content: str) -> list[tuple[str, dict]]:
+    """Parse XML <invoke> tool calls from text. Returns [(tool_name, args_dict)]."""
+    results = []
+    for m in _INVOKE_RE.finditer(content):
+        tool_name = m.group(1)
+        args = {}
+        for pm in _PARAM_RE.finditer(m.group(2)):
+            args[pm.group(1)] = pm.group(2).strip()
+        results.append((tool_name, args))
+    return results
+
+
+def _strip_xml_invokes(content: str) -> str:
+    """Remove <invoke>...</invoke> blocks from content."""
+    return _INVOKE_RE.sub('', content).strip()
 
 
 class LLMClient:
@@ -113,9 +134,41 @@ class LLMClient:
                     response.usage.completion_tokens,
                 )
 
-            # If no tool calls — LLM is done, return text
+            # If no tool calls — check for XML fallback, otherwise return text
             if not msg.tool_calls:
-                return msg.content or ""
+                xml_calls = _parse_xml_tool_calls(msg.content or "")
+                if not xml_calls:
+                    return msg.content or ""
+
+                logger.info("Fallback: parsed %d XML tool call(s) from text", len(xml_calls))
+                clean_content = _strip_xml_invokes(msg.content or "")
+
+                # Build synthetic tool_calls for message history
+                synth_calls = []
+                for idx, (tool_name, args) in enumerate(xml_calls):
+                    synth_calls.append({
+                        "id": f"xmlfb_{turn}_{idx}",
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "arguments": json.dumps(args, ensure_ascii=False),
+                        }
+                    })
+
+                messages.append({
+                    "role": "assistant",
+                    "content": clean_content or None,
+                    "tool_calls": synth_calls,
+                })
+
+                for idx, (tool_name, args) in enumerate(xml_calls):
+                    result = tool_executor(tool_name, args)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": synth_calls[idx]["id"],
+                        "content": json.dumps(result, ensure_ascii=False),
+                    })
+                continue
 
             # Append assistant message with tool calls
             messages.append(msg)

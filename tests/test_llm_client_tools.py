@@ -173,5 +173,73 @@ class CallWithToolsTest(unittest.TestCase):
         self.assertIn("сохранён", result)
 
 
+    def test_xml_fallback_tool_call(self):
+        """LLM returns XML <invoke> in content — tool is executed, LLM answers with text."""
+        client = self._make_client()
+
+        xml_content = (
+            'Сейчас посмотрю черновик.\n'
+            '<invoke name="read_draft">'
+            '<parameter name="contract_id">test</parameter>'
+            '</invoke>'
+        )
+        msg1 = FakeMessage(content=xml_content, tool_calls=None)
+        msg2 = FakeMessage(content="Черновик test содержит определение метрики.")
+
+        client.client.chat.completions.create = MagicMock(
+            side_effect=[FakeResponse(msg1), FakeResponse(msg2)]
+        )
+
+        calls = []
+        def executor(name, args):
+            calls.append((name, args))
+            return {"contract_id": "test", "content": "# Draft content"}
+
+        result = client.call_with_tools(
+            system_prompt="system",
+            user_message="что в черновике test?",
+            tools=[{"type": "function", "function": {"name": "read_draft"}}],
+            tool_executor=executor,
+        )
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0], ("read_draft", {"contract_id": "test"}))
+        self.assertIn("Черновик", result)
+
+    def test_xml_fallback_multiple_params(self):
+        """XML with multiple <parameter> tags — all args are parsed correctly."""
+        client = self._make_client()
+
+        xml_content = (
+            '<invoke name="save_draft">'
+            '<parameter name="contract_id">revenue</parameter>'
+            '<parameter name="title">Выручка</parameter>'
+            '<parameter name="content">## Определение\nСумма всех продаж</parameter>'
+            '</invoke>'
+        )
+        msg1 = FakeMessage(content=xml_content, tool_calls=None)
+        msg2 = FakeMessage(content="Черновик сохранён.")
+
+        client.client.chat.completions.create = MagicMock(
+            side_effect=[FakeResponse(msg1), FakeResponse(msg2)]
+        )
+
+        calls = []
+        def executor(name, args):
+            calls.append((name, args))
+            return {"success": True}
+
+        result = client.call_with_tools(
+            system_prompt="s", user_message="u", tools=[], tool_executor=executor,
+        )
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "save_draft")
+        self.assertEqual(calls[0][1]["contract_id"], "revenue")
+        self.assertEqual(calls[0][1]["title"], "Выручка")
+        self.assertIn("Определение", calls[0][1]["content"])
+        self.assertIn("сохранён", result)
+
+
 if __name__ == "__main__":
     unittest.main()
