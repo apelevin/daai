@@ -24,7 +24,7 @@ class ToolDefinitionsTest(unittest.TestCase):
         self.assertEqual(len(names), len(set(names)), f"Duplicate tool names: {names}")
 
     def test_read_tools_count(self):
-        self.assertEqual(len(get_read_tools()), 10)
+        self.assertEqual(len(get_read_tools()), 11)
 
     def test_write_tools_count(self):
         self.assertEqual(len(get_write_tools()), 11)
@@ -44,7 +44,8 @@ class ToolDefinitionsTest(unittest.TestCase):
         expected_read = {
             "read_contract", "read_draft", "read_discussion",
             "read_governance_policy", "read_roles", "validate_contract",
-            "check_approval", "diff_contract", "generate_contract_template", "list_contracts",
+            "check_approval", "diff_contract", "generate_contract_template",
+            "participant_stats", "list_contracts",
         }
         expected_write = {
             "save_contract", "save_draft", "update_discussion",

@@ -27,8 +27,9 @@ class Scheduler:
         schedule.every(self.reminder_hours).hours.do(self._check_reminders)
         schedule.every().friday.at("17:00").do(self._weekly_digest)
         schedule.every().tuesday.at("10:00").do(self._coverage_scan)
+        schedule.every().day.at("03:00").do(self._cleanup_threads)
 
-        logger.info("Scheduler started: reminders every %dh, digest Fri 17:00, coverage scan Tue 10:00", self.reminder_hours)
+        logger.info("Scheduler started: reminders every %dh, digest Fri 17:00, coverage Tue 10:00, cleanup 03:00", self.reminder_hours)
 
         while True:
             schedule.run_pending()
@@ -242,6 +243,15 @@ class Scheduler:
 
         except Exception as e:
             logger.error("Error in coverage_scan: %s", e, exc_info=True)
+
+    def _cleanup_threads(self):
+        """Remove expired entries from active_threads.json."""
+        try:
+            removed = self.memory.cleanup_expired_threads()
+            if removed:
+                logger.info("Thread cleanup: removed %d expired entries", removed)
+        except Exception as e:
+            logger.error("Error in cleanup_threads: %s", e, exc_info=True)
 
     def _weekly_digest(self):
         """Generate and publish weekly digest."""

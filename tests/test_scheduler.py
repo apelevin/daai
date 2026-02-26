@@ -200,3 +200,41 @@ class TestCoverageScan:
         """Coverage scan doesn't crash on errors."""
         memory.read_file = MagicMock(side_effect=Exception("disk error"))
         scheduler._coverage_scan()  # Should not raise
+
+
+class TestThreadCleanup:
+    def test_cleanup_removes_expired(self, scheduler, memory):
+        """Expired threads are removed from active_threads.json."""
+        expired = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        fresh = datetime.now(timezone.utc).isoformat()
+        memory.write_json("tasks/active_threads.json", {
+            "threads": {
+                "old_contract": {"root_post_id": "p1", "updated_at": expired},
+                "new_contract": {"root_post_id": "p2", "updated_at": fresh},
+            }
+        })
+
+        scheduler._cleanup_threads()
+
+        data = memory.read_json("tasks/active_threads.json")
+        assert "old_contract" not in data["threads"]
+        assert "new_contract" in data["threads"]
+
+    def test_cleanup_no_threads(self, scheduler, memory):
+        """Cleanup handles missing file gracefully."""
+        scheduler._cleanup_threads()  # Should not raise
+
+    def test_cleanup_all_fresh(self, scheduler, memory):
+        """No removal when all threads are fresh."""
+        fresh = datetime.now(timezone.utc).isoformat()
+        memory.write_json("tasks/active_threads.json", {
+            "threads": {
+                "a": {"root_post_id": "p1", "updated_at": fresh},
+                "b": {"root_post_id": "p2", "updated_at": fresh},
+            }
+        })
+
+        scheduler._cleanup_threads()
+
+        data = memory.read_json("tasks/active_threads.json")
+        assert len(data["threads"]) == 2

@@ -307,6 +307,42 @@ class ToolExecutor:
             "template": template,
         }
 
+    def _tool_participant_stats(self, username: str = "") -> dict:
+        """Compute participant analytics from audit log and discussions."""
+        audit = self.memory.read_jsonl("memory/audit.jsonl")
+        contracts = self.memory.list_contracts() or []
+
+        # Build per-user stats
+        stats: dict[str, dict] = {}
+
+        for entry in audit:
+            action = entry.get("action", "")
+            user = entry.get("username", "")
+            if not user:
+                continue
+            if username and user.lower() != username.lower():
+                continue
+            if user not in stats:
+                stats[user] = {"approvals": 0, "role_assignments": 0, "status_changes": 0, "contracts_saved": 0}
+            if action == "approve_contract":
+                stats[user]["approvals"] += 1
+            elif action == "assign_role":
+                stats[user]["role_assignments"] += 1
+            elif action == "set_contract_status":
+                stats[user]["status_changes"] += 1
+            elif action == "save_contract":
+                stats[user]["contracts_saved"] += 1
+
+        # Count contracts per participant from index
+        for c in contracts:
+            if not isinstance(c, dict):
+                continue
+
+        if username:
+            return {"username": username, "stats": stats.get(username.lower(), stats.get(username, {}))}
+
+        return {"participants": stats, "total_contracts": len(contracts)}
+
     def _tool_list_contracts(self) -> dict:
         contracts = self.memory.list_contracts() or []
         items = []

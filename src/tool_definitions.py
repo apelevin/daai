@@ -118,6 +118,17 @@ READ_TOOLS: list[dict] = [
         },
     ),
     _tool(
+        "participant_stats",
+        "Возвращает аналитику участников: количество согласований, сохранённых контрактов, "
+        "назначений ролей. Без параметра — все участники, с username — конкретный.",
+        {
+            "properties": {
+                "username": {"type": "string", "description": "Username участника (опционально)"},
+            },
+            "required": [],
+        },
+    ),
+    _tool(
         "list_contracts",
         "Возвращает список всех контрактов из contracts/index.json с id, name, status, tier.",
         {"properties": {}, "required": []},

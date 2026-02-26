@@ -418,6 +418,42 @@ class Memory:
         }
         self.write_json(self._ACTIVE_THREADS_FILE, data)
 
+    def cleanup_expired_threads(self) -> int:
+        """Remove expired entries from active_threads.json. Returns count removed."""
+        data = self.read_json(self._ACTIVE_THREADS_FILE)
+        if not isinstance(data, dict):
+            return 0
+        threads = data.get("threads")
+        if not isinstance(threads, dict) or not threads:
+            return 0
+
+        now = datetime.now(timezone.utc)
+        expired = []
+        for cid, entry in threads.items():
+            if not isinstance(entry, dict):
+                expired.append(cid)
+                continue
+            updated_at = entry.get("updated_at")
+            if not updated_at:
+                expired.append(cid)
+                continue
+            try:
+                dt = datetime.fromisoformat(updated_at)
+                if now - dt > timedelta(days=THREAD_TTL_DAYS):
+                    expired.append(cid)
+            except (ValueError, TypeError):
+                expired.append(cid)
+
+        if not expired:
+            return 0
+
+        for cid in expired:
+            del threads[cid]
+
+        self.write_json(self._ACTIVE_THREADS_FILE, data)
+        logger.debug("Cleaned up %d expired threads", len(expired))
+        return len(expired)
+
     # ── Atomic write batch ────────────────────────────────────────────
 
     def write_batch(self, writes: list[tuple[str, str]]) -> None:
