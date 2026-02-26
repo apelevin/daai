@@ -10,6 +10,8 @@ from src.metrics_tree import (
     get_siblings,
     find_node_by_id,
     mark_contract_agreed,
+    parse_linkage_path,
+    ensure_path_in_tree,
 )
 
 # Minimal tree markdown for tests
@@ -188,3 +190,114 @@ class TestMarkContractAgreed:
         result = mark_contract_agreed(md, "Contract Churn")
         assert result.ok
         assert not result.changed
+
+
+class TestParseLinkagePath:
+    def test_basic_arrow(self):
+        text = "SLA обработки лидов → Leads → New Clients → MAU → Extra Time"
+        result = parse_linkage_path(text)
+        assert result == ["SLA обработки лидов", "Leads", "New Clients", "MAU", "Extra Time"]
+
+    def test_arrow_formats(self):
+        assert parse_linkage_path("A -> B -> C") == ["A", "B", "C"]
+        assert parse_linkage_path("A —> B —> C") == ["A", "B", "C"]
+        assert parse_linkage_path("A => B => C") == ["A", "B", "C"]
+
+    def test_empty_input(self):
+        assert parse_linkage_path("") == []
+        assert parse_linkage_path("   \n  \n") == []
+
+    def test_multiline_picks_arrow_line(self):
+        text = "Описание связи:\nSLA → Leads → Extra Time\nДополнение"
+        result = parse_linkage_path(text)
+        assert result == ["SLA", "Leads", "Extra Time"]
+
+    def test_no_arrows(self):
+        assert parse_linkage_path("just some text without arrows") == []
+
+    def test_single_element(self):
+        assert parse_linkage_path("OnlyOne") == []
+
+
+class TestEnsurePathInTree:
+    def test_all_exist(self):
+        """Path where all nodes already exist → changed=False."""
+        result = ensure_path_in_tree(SAMPLE_TREE_MD, ["WIN NI", "New Clients", "MAU", "Extra Time"])
+        assert result.ok
+        assert not result.changed
+
+    def test_new_leaf(self):
+        """Add a new leaf node under an existing parent."""
+        path = ["SLA обработки лидов", "New Clients", "MAU", "Extra Time"]
+        result = ensure_path_in_tree(SAMPLE_TREE_MD, path)
+        assert result.ok
+        assert result.changed
+        assert "SLA обработки лидов" in result.new_text
+        assert "← DATA CONTRACT ✅" in result.new_text
+        # Verify it parses correctly after modification
+        root = parse_tree(result.new_text)
+        mau = [c for c in root.children if c.short_name == "MAU"][0]
+        nc = [c for c in mau.children if "New Clients" in c.short_name][0]
+        sla = [c for c in nc.children if "SLA" in c.short_name]
+        assert len(sla) == 1
+        assert sla[0].has_contract_marker
+        assert sla[0].is_agreed
+
+    def test_new_branch(self):
+        """Add two missing intermediate nodes (branch + leaf)."""
+        path = ["SLA", "Leads", "New Clients", "MAU", "Extra Time"]
+        result = ensure_path_in_tree(SAMPLE_TREE_MD, path)
+        assert result.ok
+        assert result.changed
+        # Both Leads and SLA should be in the output
+        assert "Leads" in result.new_text
+        assert "SLA" in result.new_text
+        # Parse and verify structure
+        root = parse_tree(result.new_text)
+        mau = [c for c in root.children if c.short_name == "MAU"][0]
+        nc = [c for c in mau.children if "New Clients" in c.short_name][0]
+        leads = [c for c in nc.children if c.short_name == "Leads"]
+        assert len(leads) == 1
+        sla = [c for c in leads[0].children if c.short_name == "SLA"]
+        assert len(sla) == 1
+        assert sla[0].has_contract_marker
+
+    def test_box_drawing(self):
+        """Verify correct ├──/└──/│   formatting after insertion."""
+        path = ["NewMetric", "New Clients", "MAU", "Extra Time"]
+        result = ensure_path_in_tree(SAMPLE_TREE_MD, path)
+        assert result.ok and result.changed
+        # The previously-last child WIN REC should now use ├── not └──
+        lines = result.new_text.splitlines()
+        win_rec_lines = [l for l in lines if "WIN REC" in l]
+        assert len(win_rec_lines) == 1
+        assert "├──" in win_rec_lines[0]
+        # The new node should use └──
+        new_lines = [l for l in lines if "NewMetric" in l]
+        assert len(new_lines) == 1
+        assert "└──" in new_lines[0]
+
+    def test_root_mismatch(self):
+        """Path with wrong root → ok=False."""
+        result = ensure_path_in_tree(SAMPLE_TREE_MD, ["A", "B", "WrongRoot"])
+        assert not result.ok
+        assert "root mismatch" in result.message
+
+    def test_path_too_short(self):
+        result = ensure_path_in_tree(SAMPLE_TREE_MD, ["OnlyOne"])
+        assert not result.ok
+
+    def test_descendant_continuation_fix(self):
+        """When └── changes to ├──, descendant lines get │ continuation."""
+        # Add a sibling to Revenue (last child of root that uses └──)
+        path = ["NewTopLevel", "Extra Time"]
+        result = ensure_path_in_tree(SAMPLE_TREE_MD, path)
+        assert result.ok and result.changed
+        lines = result.new_text.splitlines()
+        # Revenue line should now have ├── instead of └──
+        rev_lines = [l for l in lines if "Revenue" in l and "├──" in l]
+        assert len(rev_lines) == 1
+        # Revenue's children (New Income (NI), Recurring Income) should have │ continuation
+        ni_lines = [l for l in lines if "New Income (NI)" in l]
+        assert len(ni_lines) == 1
+        assert ni_lines[0].startswith("│")

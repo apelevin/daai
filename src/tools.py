@@ -14,7 +14,10 @@ from src.validator import validate_contract
 from src.glossary import check_ambiguity
 from src.governance import ApprovalPolicy, ApprovalState, ApprovalVote, check_approval_policy
 from src.lifecycle import set_status
-from src.metrics_tree import mark_contract_agreed, parse_tree, find_node_by_id, get_path_to_root
+from src.metrics_tree import (
+    mark_contract_agreed, parse_tree, find_node_by_id, get_path_to_root,
+    parse_linkage_path, ensure_path_in_tree,
+)
 from src.relationships import detect_mentions, upsert_relationships
 from src.relationships_llm import (
     build_prompt as build_relationships_prompt,
@@ -470,6 +473,22 @@ class ToolExecutor:
         # Best-effort: metrics tree
         try:
             tree_text = self.memory.read_file("context/metrics_tree.md") or ""
+
+            # Grow tree from "Связь с Extra Time" path
+            try:
+                from src.validator import _extract_sections
+                sections = _extract_sections(content)
+                linkage = sections.get("Связь с Extra Time", "")
+                if linkage:
+                    path_parts = parse_linkage_path(linkage)
+                    if len(path_parts) >= 2:
+                        grow = ensure_path_in_tree(tree_text, path_parts)
+                        if grow.ok and grow.changed:
+                            self.memory.write_file("context/metrics_tree.md", grow.new_text)
+                            tree_text = grow.new_text
+            except Exception as e:
+                logger.warning("Tree growth failed: %s", e)
+
             patch = mark_contract_agreed(tree_text, name)
             if not patch.ok:
                 patch = mark_contract_agreed(tree_text, contract_id)
