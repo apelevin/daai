@@ -380,6 +380,20 @@ class Memory:
         """Save suggestions list."""
         self.write_json("tasks/suggestions.json", {"suggestions": suggestions})
 
+    # ── Contract summaries ─────────────────────────────────────────
+
+    def get_summaries(self) -> dict:
+        data = self.read_json("contracts/summaries.json")
+        return data if isinstance(data, dict) else {}
+
+    def save_summaries(self, data: dict) -> None:
+        self.write_json("contracts/summaries.json", data)
+
+    def update_summary(self, contract_id: str, summary_data: dict) -> None:
+        summaries = self.get_summaries()
+        summaries[contract_id] = summary_data
+        self.save_summaries(summaries)
+
     # ── Active threads ────────────────────────────────────────────────
 
     def get_active_thread(self, contract_id: str) -> str | None:

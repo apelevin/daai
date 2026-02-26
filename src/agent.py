@@ -541,6 +541,24 @@ class Agent:
 
         full_system = system_prompt
 
+        # Inject cross-contract summaries and glossary for heavy routes
+        if route_data.get("type") in _FULL_PROMPT_TYPES:
+            try:
+                summaries = self.memory.get_summaries()
+                if summaries:
+                    from src.contract_summary import format_summaries_for_prompt
+                    summaries_block = format_summaries_for_prompt(summaries)
+                    if summaries_block:
+                        full_system += "\n\n" + summaries_block
+            except Exception as e:
+                logger.warning("Failed to load contract summaries: %s", e)
+            try:
+                glossary = self.memory.read_file("context/glossary.json")
+                if glossary:
+                    full_system += "\n\n# Глоссарий (обязательная терминология)\n\n" + glossary
+            except Exception:
+                pass
+
         # Entity anchoring: tell LLM which contract it's working on
         entity = route_data.get("entity")
         route_type = route_data.get("type", "")

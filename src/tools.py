@@ -23,6 +23,7 @@ from src.relationships_llm import (
     build_prompt as build_relationships_prompt,
     parse_and_validate as parse_relationships_llm,
 )
+from src.contract_summary import generate_summary
 
 logger = logging.getLogger(__name__)
 
@@ -514,6 +515,13 @@ class ToolExecutor:
             logger.warning("Post-agreement suggestion failed: %s", e)
 
         self.memory.audit_log("save_contract", contract_id=contract_id, name=name)
+
+        try:
+            summary = generate_summary(contract_id, content, "agreed")
+            self.memory.update_summary(contract_id, summary)
+        except Exception as e:
+            logger.warning("Failed to update summary for %s: %s", contract_id, e)
+
         logger.info("Saved contract: %s", contract_id)
         return {
             "success": True,
@@ -529,6 +537,12 @@ class ToolExecutor:
             "status": "draft",
             "file": f"drafts/{contract_id}.md",
         })
+        try:
+            summary = generate_summary(contract_id, content, "draft")
+            self.memory.update_summary(contract_id, summary)
+        except Exception as e:
+            logger.warning("Failed to update draft summary for %s: %s", contract_id, e)
+
         logger.info("Saved draft: %s", contract_id)
         return {"success": True, "contract_id": contract_id, "name": name}
 
@@ -764,3 +778,23 @@ class ToolExecutor:
         self.memory.write_json("contracts/index.json", index)
         self.memory.audit_log("set_contract_status", contract_id=contract_id, status=status)
         return {"success": True, "contract_id": contract_id, "status": status, "message": result.message}
+
+
+def backfill_summaries(memory) -> int:
+    """Generate summaries for all existing contracts. Returns count of summaries created."""
+    index = memory.list_contracts() or []
+    summaries = {}
+    for entry in index:
+        if not isinstance(entry, dict):
+            continue
+        cid = entry.get("id")
+        if not cid:
+            continue
+        status = entry.get("status", "draft")
+        md = memory.get_contract(cid) or memory.get_draft(cid) or ""
+        if not md:
+            continue
+        summaries[cid] = generate_summary(cid, md, status)
+    if summaries:
+        memory.save_summaries(summaries)
+    return len(summaries)
