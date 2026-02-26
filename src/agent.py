@@ -316,6 +316,17 @@ class Agent:
                 return _result(f"Черновик `{cid}` не найден на диске (drafts/{cid}.md).")
             return _result(f"📝 Черновик `{cid}`:\n\n```markdown\n{md}\n```")
 
+        if route_data.get("type") == "contract_diff":
+            cid = (route_data.get("entity") or "").strip().lower()
+            executor = ToolExecutor(self.memory, self.mm, self.llm)
+            result = executor.execute("diff_contract", {"contract_id": cid})
+            if "error" in result:
+                return _result(result["error"])
+            diff_text = result.get("diff", "")
+            prev_ts = result.get("prev_ts", "?")
+            cur_ts = result.get("current_ts", "?")
+            return _result(f"📊 Diff `{cid}` ({prev_ts} → {cur_ts}):\n\n```diff\n{diff_text}\n```")
+
         if route_data.get("type") == "conflicts_audit":
             analyzer = MetricsAnalyzer(self.memory)
             conflicts = analyzer.detect_conflicts()
@@ -430,7 +441,7 @@ class Agent:
         if route_data.get("type") == "lifecycle_set_status":
             ent = (route_data.get("entity") or "")
             if ":" not in ent:
-                return _result("Неверный формат. Используй: `поставь статус <id> <draft|in_review|approved|active|deprecated|archived>`")
+                return _result("Неверный формат. Используй: `поставь статус <id> <draft|in_review|agreed|approved|active|deprecated|archived>`")
             cid, st = ent.split(":", 1)
             index = self.memory.read_json("contracts/index.json") or {"contracts": []}
             res = set_status(index, cid, st)

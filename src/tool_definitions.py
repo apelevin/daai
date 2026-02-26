@@ -97,6 +97,27 @@ READ_TOOLS: list[dict] = [
         },
     ),
     _tool(
+        "diff_contract",
+        "Показывает diff между текущей и предыдущей версией контракта в unified diff формате.",
+        {
+            "properties": {
+                "contract_id": {"type": "string", "description": "ID контракта"},
+            },
+            "required": ["contract_id"],
+        },
+    ),
+    _tool(
+        "generate_contract_template",
+        "Генерирует предзаполненный шаблон нового контракта на основе дерева метрик, "
+        "кругов ответственности и governance policy. Используй при начале нового контракта.",
+        {
+            "properties": {
+                "contract_id": {"type": "string", "description": "ID контракта (snake_case, латиница)"},
+            },
+            "required": ["contract_id"],
+        },
+    ),
+    _tool(
         "list_contracts",
         "Возвращает список всех контрактов из contracts/index.json с id, name, status, tier.",
         {"properties": {}, "required": []},
@@ -198,17 +219,42 @@ WRITE_TOOLS: list[dict] = [
     _tool(
         "set_contract_status",
         "Меняет статус контракта в contracts/index.json. "
-        "Допустимые статусы: draft, in_review, approved, active, deprecated, archived.",
+        "Допустимые статусы: draft, in_review, agreed (согласован), approved (утверждён), active, deprecated, archived.",
         {
             "properties": {
                 "contract_id": {"type": "string", "description": "ID контракта"},
                 "status": {
                     "type": "string",
                     "description": "Новый статус",
-                    "enum": ["draft", "in_review", "approved", "active", "deprecated", "archived"],
+                    "enum": ["draft", "in_review", "agreed", "approved", "active", "deprecated", "archived"],
                 },
             },
             "required": ["contract_id", "status"],
+        },
+    ),
+    _tool(
+        "request_approval",
+        "Запускает процесс согласования контракта: определяет необходимые роли по governance policy, "
+        "отправляет уведомления ответственным, сохраняет состояние согласования. "
+        "Возвращает {success, tier, required_roles, role_users, quorum_met}.",
+        {
+            "properties": {
+                "contract_id": {"type": "string", "description": "ID контракта для согласования"},
+            },
+            "required": ["contract_id"],
+        },
+    ),
+    _tool(
+        "approve_contract",
+        "Записывает голос согласования от пользователя. Проверяет роль, дедуплицирует голоса. "
+        "Если кворум достигнут — сообщает что контракт можно финализировать через save_contract. "
+        "Возвращает {success, quorum_met, missing_roles}.",
+        {
+            "properties": {
+                "contract_id": {"type": "string", "description": "ID контракта"},
+                "username": {"type": "string", "description": "Username согласующего (латиницей)"},
+            },
+            "required": ["contract_id", "username"],
         },
     ),
     _tool(

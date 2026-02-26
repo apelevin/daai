@@ -1,8 +1,71 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import re
+
+
+@dataclass
+class ApprovalVote:
+    username: str
+    role: str
+    approved_at: str
+
+
+@dataclass
+class ApprovalState:
+    """Tracks interactive approval progress for a contract."""
+    tier: str
+    required_roles: list[str]
+    threshold: float
+    requested_at: str | None = None
+    approvals: list[ApprovalVote] = field(default_factory=list)
+
+    def is_quorum_met(self) -> bool:
+        approved_roles = {a.role for a in self.approvals}
+        covered = [r for r in self.required_roles if r in approved_roles]
+        if not self.required_roles:
+            return True
+        ratio = len(covered) / len(self.required_roles)
+        if self.threshold == 1.0:
+            return len(covered) == len(self.required_roles)
+        return ratio >= self.threshold
+
+    def missing_roles(self) -> list[str]:
+        approved_roles = {a.role for a in self.approvals}
+        return [r for r in self.required_roles if r not in approved_roles]
+
+    def to_dict(self) -> dict:
+        return {
+            "tier": self.tier,
+            "required_roles": self.required_roles,
+            "threshold": self.threshold,
+            "requested_at": self.requested_at,
+            "approvals": [
+                {"username": a.username, "role": a.role, "approved_at": a.approved_at}
+                for a in self.approvals
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> ApprovalState:
+        if not isinstance(data, dict):
+            return cls(tier="", required_roles=[], threshold=1.0)
+        approvals = []
+        for a in data.get("approvals", []):
+            if isinstance(a, dict):
+                approvals.append(ApprovalVote(
+                    username=a.get("username", ""),
+                    role=a.get("role", ""),
+                    approved_at=a.get("approved_at", ""),
+                ))
+        return cls(
+            tier=data.get("tier", ""),
+            required_roles=data.get("required_roles", []),
+            threshold=float(data.get("threshold", 1.0)),
+            requested_at=data.get("requested_at"),
+            approvals=approvals,
+        )
 
 
 @dataclass

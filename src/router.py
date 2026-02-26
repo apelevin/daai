@@ -54,6 +54,11 @@ def route(llm_client, memory, username: str, message: str,
         ts = m.group(3)
         return {"type": "contract_version", "entity": f"{cid}:{ts}", "load_files": [], "model": "cheap"}
 
+    m = re.search(r"\bпокажи\s+diff\s+([a-z0-9_\-]+)\b", message, re.IGNORECASE)
+    if m:
+        cid = m.group(1).lower()
+        return {"type": "contract_diff", "entity": cid, "load_files": [], "model": "cheap"}
+
     m = re.search(r"\bпокажи\s+контракт\s+([a-z0-9_\-]+)\b", message, re.IGNORECASE)
     if m:
         cid = m.group(1).lower()
@@ -90,7 +95,29 @@ def route(llm_client, memory, username: str, message: str,
     if m:
         return {"type": "governance_requirements_for", "entity": m.group(1).lower(), "load_files": ["context/governance.json", "context/roles.json", "contracts/index.json"], "model": "cheap"}
 
-    m = re.search(r"\b(переведи|поставь)\s+статус\s+([a-z0-9_\-]+)\s+(draft|in_review|approved|active|deprecated|archived)\b", message, re.IGNORECASE)
+    # Approval vote fast-path: "согласую контракт X" / "одобряю X" / "approve X"
+    m = re.search(r"\b(согласую|одобряю|approve)\s+(?:контракт\s+)?([a-z0-9_\-]+)\b", message, re.IGNORECASE)
+    if m:
+        cid = m.group(2).lower()
+        return {
+            "type": "contract_discussion",
+            "entity": cid,
+            "load_files": [f"drafts/{cid}_discussion.json", f"contracts/{cid}.md", f"drafts/{cid}.md"],
+            "model": "heavy",
+        }
+
+    # Start approval workflow fast-path: "запусти согласование X"
+    m = re.search(r"\b(запусти|начни)\s+согласован(?:ие|ия)\s+([a-z0-9_\-]+)\b", message, re.IGNORECASE)
+    if m:
+        cid = m.group(2).lower()
+        return {
+            "type": "contract_discussion",
+            "entity": cid,
+            "load_files": [f"drafts/{cid}_discussion.json", f"drafts/{cid}.md", f"contracts/{cid}.md", "context/governance.json"],
+            "model": "heavy",
+        }
+
+    m = re.search(r"\b(переведи|поставь)\s+статус\s+([a-z0-9_\-]+)\s+(draft|in_review|agreed|approved|active|deprecated|archived)\b", message, re.IGNORECASE)
     if m:
         cid = m.group(2).lower()
         st = m.group(3).lower()

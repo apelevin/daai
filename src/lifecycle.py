@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 
-ALLOWED_STATUSES = {"draft", "in_review", "approved", "active", "deprecated", "archived"}
+ALLOWED_STATUSES = {"draft", "in_review", "agreed", "approved", "active", "deprecated", "archived"}
 
 
 @dataclass

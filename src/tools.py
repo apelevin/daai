@@ -5,15 +5,16 @@ Each handler method returns a JSON-serializable dict.
 
 from __future__ import annotations
 
+import difflib
 import json
 import logging
 from datetime import datetime, timezone
 
 from src.validator import validate_contract
 from src.glossary import check_ambiguity
-from src.governance import ApprovalPolicy, check_approval_policy
+from src.governance import ApprovalPolicy, ApprovalState, ApprovalVote, check_approval_policy
 from src.lifecycle import set_status
-from src.metrics_tree import mark_contract_agreed
+from src.metrics_tree import mark_contract_agreed, parse_tree, find_node_by_id, get_path_to_root
 from src.relationships import detect_mentions, upsert_relationships
 from src.relationships_llm import (
     build_prompt as build_relationships_prompt,
@@ -181,6 +182,129 @@ class ToolExecutor:
             "tier": tier_key,
             "missing_roles": list(check.missing_roles),
             "glossary_issues": glossary_issues,
+        }
+
+    def _tool_diff_contract(self, contract_id: str) -> dict:
+        """Show diff between current and previous version of a contract."""
+        history = self.memory.get_contract_history(contract_id)
+        if not history:
+            return {"error": f"История версий для {contract_id} не найдена."}
+
+        # Find the last two "current" entries, or last "previous" + last "current"
+        current_entries = [h for h in history if h.get("kind") == "current"]
+        prev_entries = [h for h in history if h.get("kind") == "previous"]
+
+        if not current_entries:
+            return {"error": f"Нет текущих версий для {contract_id}."}
+
+        latest_ts = current_entries[-1].get("ts")
+        latest_md = self.memory.get_contract_version(contract_id, latest_ts) if latest_ts else None
+
+        # Best previous: use the last "previous" entry, or the second-to-last "current"
+        prev_md = None
+        prev_ts = None
+        if prev_entries:
+            prev_ts = prev_entries[-1].get("ts")
+            prev_md = self.memory.get_contract_version(contract_id, prev_ts) if prev_ts else None
+        elif len(current_entries) >= 2:
+            prev_ts = current_entries[-2].get("ts")
+            prev_md = self.memory.get_contract_version(contract_id, prev_ts) if prev_ts else None
+
+        if not prev_md:
+            return {"error": f"Только одна версия контракта {contract_id}, сравнивать не с чем."}
+
+        # Generate unified diff
+        diff_lines = list(difflib.unified_diff(
+            (prev_md or "").splitlines(keepends=True),
+            (latest_md or "").splitlines(keepends=True),
+            fromfile=f"{contract_id} ({prev_ts})",
+            tofile=f"{contract_id} ({latest_ts})",
+            lineterm="",
+        ))
+
+        if not diff_lines:
+            return {"contract_id": contract_id, "diff": "(нет изменений)", "prev_ts": prev_ts, "current_ts": latest_ts}
+
+        return {
+            "contract_id": contract_id,
+            "diff": "\n".join(diff_lines),
+            "prev_ts": prev_ts,
+            "current_ts": latest_ts,
+        }
+
+    def _tool_generate_contract_template(self, contract_id: str) -> dict:
+        """Generate a pre-filled contract template from metrics tree + circles + governance."""
+        tree_md = self.memory.read_file("context/metrics_tree.md") or ""
+        root = parse_tree(tree_md)
+
+        metric_name = contract_id
+        tree_path = ""
+        if root:
+            node = find_node_by_id(root, contract_id)
+            if node:
+                metric_name = node.short_name or node.name
+                tree_path = get_path_to_root(node)
+
+        # Resolve stakeholders
+        stakeholders = []
+        try:
+            from src.suggestion_engine import _resolve_stakeholders
+            circles_md = self.memory.read_file("context/circles.md") or ""
+            stakeholders = _resolve_stakeholders(metric_name, circles_md)
+        except Exception:
+            pass
+
+        # Determine tier
+        tier_key = "tier_2"
+        for c in (self.memory.list_contracts() or []):
+            if isinstance(c, dict) and str(c.get("id") or "").lower() == contract_id.lower() and c.get("tier"):
+                tier_key = str(c["tier"])
+                break
+
+        # Governance info
+        gov = self.memory.read_json("context/governance.json") or {}
+        tiers = (gov.get("tiers") or {}) if isinstance(gov, dict) else {}
+        tier_cfg = tiers.get(tier_key, {}) if isinstance(tiers, dict) else {}
+        required_roles = tier_cfg.get("approval_required", []) if isinstance(tier_cfg, dict) else []
+
+        stakeholders_str = ", ".join([f"@{s}" for s in stakeholders]) if stakeholders else "(определить)"
+        roles_str = ", ".join(required_roles) if required_roles else "(определить)"
+
+        template = f"""# Data Contract: {metric_name}
+
+## Определение
+(Описание метрики — что она измеряет, в каких единицах.)
+
+## Формула
+(Точная формула расчёта.)
+
+## Источник данных
+(Система, таблица, поле.)
+
+## Связь с Extra Time
+{tree_path or f"{metric_name} → ... → Extra Time"}
+
+## Гранулярность
+- Временная: месяц
+- Организационная: (компания / отдел / клиент)
+
+## Ответственные
+- Владелец метрики: {stakeholders_str}
+- Согласование ({tier_key}): {roles_str}
+
+## Связанные контракты
+(Перечислить ID связанных контрактов.)
+
+## Согласовано
+(Здесь будут подписи согласующих.)
+"""
+        return {
+            "contract_id": contract_id,
+            "metric_name": metric_name,
+            "tree_path": tree_path,
+            "tier": tier_key,
+            "stakeholders": stakeholders,
+            "template": template,
         }
 
     def _tool_list_contracts(self) -> dict:
@@ -429,6 +553,149 @@ class ToolExecutor:
         if isinstance(result, dict) and result.get("error"):
             return {"success": False, "error": result["error"]}
         return {"success": True}
+
+    def _tool_request_approval(self, contract_id: str) -> dict:
+        """Start approval workflow: determine required roles, notify, track state."""
+        content = self.memory.get_draft(contract_id) or self.memory.get_contract(contract_id)
+        if not content:
+            return {"error": f"Контракт или черновик {contract_id} не найден"}
+
+        # Determine tier
+        gov = self.memory.read_json("context/governance.json") or {}
+        tiers = (gov.get("tiers") or {}) if isinstance(gov, dict) else {}
+        tier_key = "tier_2"
+        for c in (self.memory.list_contracts() or []):
+            if isinstance(c, dict) and str(c.get("id") or "").lower() == contract_id.lower() and c.get("tier"):
+                tier_key = str(c["tier"])
+                break
+
+        tier_cfg = tiers.get(tier_key) if isinstance(tiers, dict) else None
+        if not isinstance(tier_cfg, dict):
+            return {"error": f"Политика {tier_key} не найдена в governance.json"}
+
+        required_roles = list(tier_cfg.get("approval_required") or [])
+        threshold = float(tier_cfg.get("consensus_threshold") or 1.0)
+
+        # Build role → users map
+        roles = _merge_roles(self.memory)
+        role_users = {}
+        for role in required_roles:
+            role_users[role] = roles.get(role, [])
+
+        # Load or create approval state
+        discussion = self.memory.get_discussion(contract_id) or {}
+        existing_state = discussion.get("approval_state")
+
+        now = datetime.now(timezone.utc).isoformat()
+        state = ApprovalState(
+            tier=tier_key,
+            required_roles=required_roles,
+            threshold=threshold,
+            requested_at=now,
+            approvals=ApprovalState.from_dict(existing_state).approvals if existing_state else [],
+        )
+
+        # Save state
+        discussion["approval_state"] = state.to_dict()
+        self.memory.update_discussion(contract_id, discussion)
+
+        # Notify via Mattermost
+        mentions = []
+        for role, users in role_users.items():
+            for u in users:
+                mentions.append(f"@{u} ({role})")
+
+        if self.mm and mentions:
+            msg = (
+                f"📋 **Запрос на согласование контракта `{contract_id}`**\n\n"
+                f"Tier: {tier_key} (порог: {threshold * 100:.0f}%)\n"
+                f"Требуются: {', '.join(mentions)}\n\n"
+                f"Для согласования напишите: `согласую контракт {contract_id}`"
+            )
+            self.mm.send_to_channel(msg)
+
+        return {
+            "success": True,
+            "contract_id": contract_id,
+            "tier": tier_key,
+            "threshold": threshold,
+            "required_roles": required_roles,
+            "role_users": role_users,
+            "existing_approvals": [a.username for a in state.approvals],
+            "quorum_met": state.is_quorum_met(),
+        }
+
+    def _tool_approve_contract(self, contract_id: str, username: str) -> dict:
+        """Record an approval vote. Returns quorum status."""
+        username = username.strip().lstrip("@").lower()
+        if not username:
+            return {"error": "username is required"}
+
+        # Load approval state
+        discussion = self.memory.get_discussion(contract_id) or {}
+        state_data = discussion.get("approval_state")
+        if not state_data:
+            return {"error": f"Согласование для {contract_id} не запущено. Используй request_approval."}
+
+        state = ApprovalState.from_dict(state_data)
+
+        # Check user's role
+        roles = _merge_roles(self.memory)
+        role_map = {}
+        for role, users in roles.items():
+            for u in users:
+                role_map[u.lower()] = role
+
+        user_role = role_map.get(username)
+        if not user_role or user_role not in state.required_roles:
+            return {
+                "error": f"@{username} не имеет необходимой роли для согласования. "
+                         f"Требуются: {', '.join(state.required_roles)}",
+                "username": username,
+                "user_role": user_role,
+            }
+
+        # Check if already approved
+        if any(a.username == username for a in state.approvals):
+            return {
+                "success": True,
+                "already_approved": True,
+                "contract_id": contract_id,
+                "quorum_met": state.is_quorum_met(),
+                "missing_roles": state.missing_roles(),
+            }
+
+        # Record approval
+        now = datetime.now(timezone.utc).isoformat()
+        state.approvals.append(ApprovalVote(
+            username=username,
+            role=user_role,
+            approved_at=now,
+        ))
+
+        # Save
+        discussion["approval_state"] = state.to_dict()
+        self.memory.update_discussion(contract_id, discussion)
+
+        quorum = state.is_quorum_met()
+        missing = state.missing_roles()
+
+        result = {
+            "success": True,
+            "contract_id": contract_id,
+            "approved_by": username,
+            "role": user_role,
+            "quorum_met": quorum,
+            "missing_roles": missing,
+            "total_approvals": len(state.approvals),
+        }
+
+        if quorum:
+            result["message"] = "Кворум достигнут! Контракт можно финализировать через save_contract."
+        else:
+            result["message"] = f"Осталось получить согласование: {', '.join(missing)}"
+
+        return result
 
     def _tool_set_contract_status(self, contract_id: str, status: str) -> dict:
         index = self.memory.read_json("contracts/index.json") or {"contracts": []}

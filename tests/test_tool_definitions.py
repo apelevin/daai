@@ -24,10 +24,10 @@ class ToolDefinitionsTest(unittest.TestCase):
         self.assertEqual(len(names), len(set(names)), f"Duplicate tool names: {names}")
 
     def test_read_tools_count(self):
-        self.assertEqual(len(get_read_tools()), 8)
+        self.assertEqual(len(get_read_tools()), 10)
 
     def test_write_tools_count(self):
-        self.assertEqual(len(get_write_tools()), 9)
+        self.assertEqual(len(get_write_tools()), 11)
 
     def test_required_params_are_in_properties(self):
         for tool in get_all_tools():
@@ -44,12 +44,13 @@ class ToolDefinitionsTest(unittest.TestCase):
         expected_read = {
             "read_contract", "read_draft", "read_discussion",
             "read_governance_policy", "read_roles", "validate_contract",
-            "check_approval", "list_contracts",
+            "check_approval", "diff_contract", "generate_contract_template", "list_contracts",
         }
         expected_write = {
             "save_contract", "save_draft", "update_discussion",
             "add_reminder", "update_participant", "save_decision",
-            "assign_role", "set_contract_status", "create_poll",
+            "assign_role", "set_contract_status",
+            "request_approval", "approve_contract", "create_poll",
         }
         read_names = {t["function"]["name"] for t in get_read_tools()}
         write_names = {t["function"]["name"] for t in get_write_tools()}
