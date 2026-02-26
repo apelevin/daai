@@ -108,9 +108,7 @@ def _slugify_metric(name: str) -> str:
 
 # ── Main engine ──────────────────────────────────────────────────────────────
 
-_COOLDOWN_DAYS = 14       # Don't re-suggest same contract within 14 days
-_DISMISS_COOLDOWN_DAYS = 30  # Don't re-suggest dismissed within 30 days
-_MAX_PER_DAY = 1          # Max 1 suggestion per day
+from src.config import SUGGESTION_COOLDOWN_DAYS, SUGGESTION_DISMISS_COOLDOWN_DAYS, SUGGESTION_MAX_PER_DAY
 
 
 class SuggestionEngine:
@@ -277,10 +275,10 @@ class SuggestionEngine:
                 continue
 
             if status == "dismissed":
-                if now - dt < timedelta(days=_DISMISS_COOLDOWN_DAYS):
+                if now - dt < timedelta(days=SUGGESTION_DISMISS_COOLDOWN_DAYS):
                     dismissed_ids.add(cid)
             elif status in ("suggested", "accepted"):
-                if now - dt < timedelta(days=_COOLDOWN_DAYS):
+                if now - dt < timedelta(days=SUGGESTION_COOLDOWN_DAYS):
                     recent_ids.add(cid)
 
         result: list[SuggestionCandidate] = []
@@ -306,7 +304,7 @@ class SuggestionEngine:
             if suggested_at.startswith(today):
                 count += 1
 
-        return count < _MAX_PER_DAY
+        return count < SUGGESTION_MAX_PER_DAY
 
     def record_suggestion(
         self,

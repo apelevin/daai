@@ -6,12 +6,11 @@ import os
 import threading
 import time
 
+from src.config import DEDUP_TTL_SECONDS, DEDUP_MAX_ENTRIES
+
 logger = logging.getLogger(__name__)
 
-# Max age (seconds) for persistent dedup entries — 24 hours
-_DEDUP_TTL_SECONDS = 24 * 60 * 60
 _DEDUP_FILE = "tasks/seen_posts.json"
-_DEDUP_MAX_ENTRIES = 4000
 
 
 class Listener:
@@ -36,7 +35,7 @@ class Listener:
                 for entry in data["posts"]:
                     if isinstance(entry, dict) and isinstance(entry.get("id"), str):
                         ts = entry.get("ts", 0)
-                        if now - ts < _DEDUP_TTL_SECONDS:
+                        if now - ts < DEDUP_TTL_SECONDS:
                             self._seen_post_ids.add(entry["id"])
                 logger.info("Loaded %d persisted seen post IDs", len(self._seen_post_ids))
         except Exception:
@@ -54,12 +53,12 @@ class Listener:
             # Prune expired entries
             data["posts"] = [
                 e for e in data["posts"]
-                if isinstance(e, dict) and now - e.get("ts", 0) < _DEDUP_TTL_SECONDS
+                if isinstance(e, dict) and now - e.get("ts", 0) < DEDUP_TTL_SECONDS
             ]
 
             # Cap max entries
-            if len(data["posts"]) >= _DEDUP_MAX_ENTRIES:
-                data["posts"] = data["posts"][-(_DEDUP_MAX_ENTRIES // 2):]
+            if len(data["posts"]) >= DEDUP_MAX_ENTRIES:
+                data["posts"] = data["posts"][-(DEDUP_MAX_ENTRIES // 2):]
 
             data["posts"].append({"id": post_id, "ts": now})
             self.agent.memory.write_json(_DEDUP_FILE, data)
@@ -145,8 +144,8 @@ class Listener:
                 with self._dedup_lock:
                     self._inflight_post_ids.discard(post_id)
                     self._seen_post_ids.add(post_id)
-                    if len(self._seen_post_ids) > _DEDUP_MAX_ENTRIES:
-                        self._seen_post_ids = set(list(self._seen_post_ids)[-(_DEDUP_MAX_ENTRIES // 2):])
+                    if len(self._seen_post_ids) > DEDUP_MAX_ENTRIES:
+                        self._seen_post_ids = set(list(self._seen_post_ids)[-(DEDUP_MAX_ENTRIES // 2):])
                 self._persist_seen_post(post_id)
 
     def _process_posted(self, post_id, root_id, user_id, channel_id, message, data):

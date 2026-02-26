@@ -6,10 +6,9 @@ from typing import Callable
 
 import openai
 
-logger = logging.getLogger(__name__)
+from src.config import LLM_TIMEOUT_SECONDS
 
-# Default timeout for LLM API calls (seconds)
-_DEFAULT_TIMEOUT = int(os.environ.get("LLM_TIMEOUT_SECONDS", "120"))
+logger = logging.getLogger(__name__)
 
 
 class LLMClient:
@@ -22,10 +21,10 @@ class LLMClient:
         self.client = openai.OpenAI(
             base_url=base_url,
             api_key=api_key,
-            timeout=_DEFAULT_TIMEOUT,
+            timeout=LLM_TIMEOUT_SECONDS,
         )
         self.log_costs = os.environ.get("LOG_LLM_COSTS", "true").lower() == "true"
-        logger.info("LLM client initialized: cheap=%s, heavy=%s, timeout=%ds", self.cheap_model, self.heavy_model, _DEFAULT_TIMEOUT)
+        logger.info("LLM client initialized: cheap=%s, heavy=%s, timeout=%ds", self.cheap_model, self.heavy_model, LLM_TIMEOUT_SECONDS)
 
     def call_cheap(self, system_prompt: str, user_message: str) -> str:
         """Fast cheap call for routing and simple responses."""

@@ -8,10 +8,9 @@ from datetime import datetime, timezone, timedelta
 
 import schedule
 
-logger = logging.getLogger(__name__)
+from src.config import REMINDER_STEP_DAYS, REMINDER_DEFAULT_INTERVAL_DAYS
 
-# Reminder step durations in days
-STEP_DAYS = {1: 2, 2: 4, 3: 6, 4: 8}
+logger = logging.getLogger(__name__)
 
 
 class Scheduler:
@@ -195,7 +194,7 @@ class Scheduler:
 
                 # Update next reminder (+2 days)
                 rem["last_reminder"] = now.isoformat()
-                rem["next_reminder"] = (now + timedelta(days=2)).isoformat()
+                rem["next_reminder"] = (now + timedelta(days=REMINDER_DEFAULT_INTERVAL_DAYS)).isoformat()
                 updated = True
 
                 logger.info(

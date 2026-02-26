@@ -458,6 +458,7 @@ class ToolExecutor:
         except Exception as e:
             logger.warning("Post-agreement suggestion failed: %s", e)
 
+        self.memory.audit_log("save_contract", contract_id=contract_id, name=name)
         logger.info("Saved contract: %s", contract_id)
         return {
             "success": True,
@@ -538,6 +539,7 @@ class ToolExecutor:
         roles[role] = users_lower
 
         self.memory.write_json("tasks/roles.json", idx)
+        self.memory.audit_log("assign_role", role=role, username=username)
         logger.info("Assigned role %s to %s", role, username)
         return {"success": True, "role": role, "username": username}
 
@@ -677,6 +679,8 @@ class ToolExecutor:
         discussion["approval_state"] = state.to_dict()
         self.memory.update_discussion(contract_id, discussion)
 
+        self.memory.audit_log("approve_contract", contract_id=contract_id, username=username, role=user_role)
+
         quorum = state.is_quorum_met()
         missing = state.missing_roles()
 
@@ -703,4 +707,5 @@ class ToolExecutor:
         if not result.ok:
             return {"success": False, "error": result.message}
         self.memory.write_json("contracts/index.json", index)
+        self.memory.audit_log("set_contract_status", contract_id=contract_id, status=status)
         return {"success": True, "contract_id": contract_id, "status": status, "message": result.message}

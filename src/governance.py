@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import re
 
+from src.config import GOVERNANCE_REVIEW_THRESHOLD_DAYS
+
 
 @dataclass
 class ApprovalVote:
@@ -88,7 +90,7 @@ def _parse_date(s: str | None) -> datetime | None:
         return None
 
 
-def find_contracts_requiring_review(contracts: list[dict], *, now: datetime | None = None, days_threshold: int = 180) -> list[ReviewItem]:
+def find_contracts_requiring_review(contracts: list[dict], *, now: datetime | None = None, days_threshold: int = GOVERNANCE_REVIEW_THRESHOLD_DAYS) -> list[ReviewItem]:
     """Deterministic review trigger based on agreed_date.
 
     MVP: if agreed_date older than days_threshold -> requires review.

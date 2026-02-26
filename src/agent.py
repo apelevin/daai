@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from src.config import THREAD_MAX_MESSAGES, THREAD_MAX_CHARS
 from src.router import route, HEAVY_TYPES
 from src.analyzer import MetricsAnalyzer, render_conflicts
 from src.governance import find_contracts_requiring_review, render_review_report
@@ -58,9 +59,6 @@ class Agent:
 
     def _build_thread_context(self, thread_posts: list[dict], exclude_post_id: str | None = None) -> str | None:
         """Build thread context string from a list of thread posts."""
-        _THREAD_MAX_MESSAGES = 15
-        _THREAD_MAX_CHARS = 4000
-
         context_parts = []
         for tp in thread_posts:
             if exclude_post_id and tp.get("id") == exclude_post_id:
@@ -77,14 +75,14 @@ class Agent:
             context_parts.append(f"{tp_name}: {tp['message']}")
 
         # Keep last N messages
-        if len(context_parts) > _THREAD_MAX_MESSAGES:
-            context_parts = context_parts[-_THREAD_MAX_MESSAGES:]
+        if len(context_parts) > THREAD_MAX_MESSAGES:
+            context_parts = context_parts[-THREAD_MAX_MESSAGES:]
 
         result = "\n".join(context_parts)
 
         # Truncate by chars, keep tail
-        if len(result) > _THREAD_MAX_CHARS:
-            result = "…(начало треда обрезано)\n" + result[-_THREAD_MAX_CHARS:]
+        if len(result) > THREAD_MAX_CHARS:
+            result = "…(начало треда обрезано)\n" + result[-THREAD_MAX_CHARS:]
 
         return result if result else None
 

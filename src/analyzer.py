@@ -121,15 +121,11 @@ class MetricsAnalyzer:
         conflicts: list[Conflict] = []
 
         items = self.memory.list_contracts() or []
-        # prefer agreed/active; if absent, include all
-        filtered = []
-        for c in items:
-            cid = c.get("id")
-            if not cid:
-                continue
-            if only_contract_ids and cid not in only_contract_ids:
-                continue
-            filtered.append(c)
+        # When only_contract_ids is set, still load all for cross-checking,
+        # but mark targets to limit per-contract checks.
+        target_ids = set(only_contract_ids) if only_contract_ids else None
+
+        filtered = [c for c in items if c.get("id")]
 
         # Load markdown for each contract
         loaded: dict[str, dict] = {}
@@ -157,6 +153,8 @@ class MetricsAnalyzer:
         ambiguous_words = ["примерно", "около", "приблизительно", "где-то", "как-то", "иногда"]
 
         for cid, d in loaded.items():
+            if target_ids and cid not in target_ids:
+                continue
             md = self.memory.get_contract(cid) or ""
             sections = _extract_sections(md)
 
@@ -201,6 +199,8 @@ class MetricsAnalyzer:
 
         # Missing/invalid linkage
         for cid, d in loaded.items():
+            if target_ids and cid not in target_ids:
+                continue
             link = d.get("linkage", "")
             if not link:
                 conflicts.append(Conflict(
@@ -283,7 +283,7 @@ class MetricsAnalyzer:
         graph: dict[str, list[str]] = {}
         for cid, d in loaded.items():
             rel = d.get("related") or []
-            if cid in rel:
+            if (not target_ids or cid in target_ids) and cid in rel:
                 conflicts.append(Conflict(
                     type="self_related_reference",
                     severity="medium",
@@ -293,7 +293,7 @@ class MetricsAnalyzer:
                 ))
 
             unknown = [x for x in rel if x not in loaded]
-            if unknown:
+            if unknown and (not target_ids or cid in target_ids):
                 conflicts.append(Conflict(
                     type="unknown_related_contract",
                     severity="low",
@@ -353,9 +353,21 @@ class MetricsAnalyzer:
                 dfs(cid)
 
         # Overlapping definitions heuristic
+        # When target_ids is set, only compare targets vs all others (O(n*k))
         cids = list(loaded.keys())
-        for i in range(len(cids)):
-            for j in range(i + 1, len(cids)):
+        pairs_to_check: list[tuple[int, int]] = []
+        if target_ids:
+            target_indices = {i for i, c in enumerate(cids) if c in target_ids}
+            for i in target_indices:
+                for j in range(len(cids)):
+                    if i != j and (i, j) not in pairs_to_check and (j, i) not in pairs_to_check:
+                        pairs_to_check.append((min(i, j), max(i, j)))
+        else:
+            for i in range(len(cids)):
+                for j in range(i + 1, len(cids)):
+                    pairs_to_check.append((i, j))
+
+        for i, j in pairs_to_check:
                 a = loaded[cids[i]]
                 b = loaded[cids[j]]
                 if a["name_norm"] == b["name_norm"]:

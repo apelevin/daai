@@ -7,15 +7,13 @@ import hashlib
 import time
 from datetime import datetime, timedelta, timezone
 
-logger = logging.getLogger(__name__)
+from src.config import WRITE_MAX_RETRIES, WRITE_BACKOFF_BASE, THREAD_TTL_DAYS
 
-_WRITE_MAX_RETRIES = 3
-_WRITE_BACKOFF_BASE = 0.5  # seconds
+logger = logging.getLogger(__name__)
 
 
 class Memory:
     _ACTIVE_THREADS_FILE = "tasks/active_threads.json"
-    _THREAD_TTL_DAYS = 7
 
     def __init__(self):
         self.base_dir = os.environ.get("DATA_DIR", ".")
@@ -35,20 +33,20 @@ class Memory:
     @staticmethod
     def _retry_io(fn, description: str) -> None:
         """Retry a write operation with exponential backoff on OSError."""
-        for attempt in range(1, _WRITE_MAX_RETRIES + 1):
+        for attempt in range(1, WRITE_MAX_RETRIES + 1):
             try:
                 fn()
                 return
             except OSError as e:
-                if attempt < _WRITE_MAX_RETRIES:
-                    delay = _WRITE_BACKOFF_BASE * (2 ** (attempt - 1))
+                if attempt < WRITE_MAX_RETRIES:
+                    delay = WRITE_BACKOFF_BASE * (2 ** (attempt - 1))
                     logger.warning(
                         "I/O error on %s (attempt %d/%d), retrying in %.1fs: %s",
-                        description, attempt, _WRITE_MAX_RETRIES, delay, e,
+                        description, attempt, WRITE_MAX_RETRIES, delay, e,
                     )
                     time.sleep(delay)
                 else:
-                    logger.error("I/O error on %s after %d attempts: %s", description, _WRITE_MAX_RETRIES, e)
+                    logger.error("I/O error on %s after %d attempts: %s", description, WRITE_MAX_RETRIES, e)
                     raise
 
     def read_file(self, path: str) -> str | None:
@@ -128,9 +126,10 @@ class Memory:
         - If a contract already exists, snapshot the previous content.
         - Always snapshot the new content.
 
-        Files:
+        Files written atomically via write_batch:
         - contracts/<id>.md (current)
         - contracts/versions/<id>/<ts>.md (snapshots)
+        Then history appended:
         - contracts/versions/<id>/history.jsonl (metadata)
         """
         current_path = f"contracts/{contract_id}.md"
@@ -140,27 +139,36 @@ class Memory:
         versions_dir = f"contracts/versions/{contract_id}"
         history_path = f"{versions_dir}/history.jsonl"
 
+        # Collect all file writes
+        writes: list[tuple[str, str]] = []
+        history_entries: list[dict] = []
+
         if prev is not None:
             prev_ts = f"{ts}_prev"
-            self.write_file(f"{versions_dir}/{prev_ts}.md", prev)
-            self.append_jsonl(history_path, {
+            writes.append((f"{versions_dir}/{prev_ts}.md", prev))
+            history_entries.append({
                 "ts": prev_ts,
                 "kind": "previous",
                 "sha256": self._sha256(prev),
                 "bytes": len(prev.encode("utf-8")),
             })
 
-        # Write new current
-        self.write_file(current_path, content)
-
-        # Snapshot new
-        self.write_file(f"{versions_dir}/{ts}.md", content)
-        self.append_jsonl(history_path, {
+        # Current + snapshot
+        writes.append((current_path, content))
+        writes.append((f"{versions_dir}/{ts}.md", content))
+        history_entries.append({
             "ts": ts,
             "kind": "current",
             "sha256": self._sha256(content),
             "bytes": len((content or "").encode("utf-8")),
         })
+
+        # Atomic write of all .md files
+        self.write_batch(writes)
+
+        # Append history entries (sequential, after files are in place)
+        for entry in history_entries:
+            self.append_jsonl(history_path, entry)
 
     def get_contract_history(self, contract_id: str) -> list[dict]:
         """Return version history metadata for a contract."""
@@ -389,7 +397,7 @@ class Memory:
         if updated_at:
             try:
                 dt = datetime.fromisoformat(updated_at)
-                if datetime.now(timezone.utc) - dt > timedelta(days=self._THREAD_TTL_DAYS):
+                if datetime.now(timezone.utc) - dt > timedelta(days=THREAD_TTL_DAYS):
                     return None
             except (ValueError, TypeError):
                 pass
@@ -409,6 +417,64 @@ class Memory:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         self.write_json(self._ACTIVE_THREADS_FILE, data)
+
+    # ── Atomic write batch ────────────────────────────────────────────
+
+    def write_batch(self, writes: list[tuple[str, str]]) -> None:
+        """Write multiple files atomically using temp + rename.
+
+        Args:
+            writes: list of (relative_path, content) tuples.
+
+        All files are written to temp paths first, then renamed into place.
+        If any rename fails, already-renamed files remain (best-effort).
+        """
+        import tempfile
+
+        staged: list[tuple[str, str]] = []  # (temp_path, final_path)
+
+        try:
+            for rel_path, content in writes:
+                final = self._path(rel_path)
+                os.makedirs(os.path.dirname(final), exist_ok=True)
+                fd, tmp = tempfile.mkstemp(
+                    dir=os.path.dirname(final),
+                    prefix=".tmp_",
+                    suffix=".md" if rel_path.endswith(".md") else ".json",
+                )
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        f.write(content)
+                except Exception:
+                    os.close(fd)
+                    raise
+                staged.append((tmp, final))
+        except Exception:
+            # Clean up any temp files
+            for tmp, _ in staged:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+            raise
+
+        # Rename all temp files into place
+        for tmp, final in staged:
+            os.replace(tmp, final)
+
+    # ── Audit log ─────────────────────────────────────────────────────
+
+    def audit_log(self, action: str, **kwargs) -> None:
+        """Append an audit entry to memory/audit.jsonl."""
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "action": action,
+            **kwargs,
+        }
+        try:
+            self.append_jsonl("memory/audit.jsonl", entry)
+        except Exception as e:
+            logger.warning("Audit log write failed: %s", e)
 
     # ── Load multiple files for context ─────────────────────────────
 
