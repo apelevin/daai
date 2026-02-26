@@ -138,6 +138,19 @@ class Listener:
                     return
                 self._inflight_post_ids.add(post_id)
 
+        try:
+            self._process_posted(post_id, root_id, user_id, channel_id, message, data)
+        finally:
+            if post_id:
+                with self._dedup_lock:
+                    self._inflight_post_ids.discard(post_id)
+                    self._seen_post_ids.add(post_id)
+                    if len(self._seen_post_ids) > _DEDUP_MAX_ENTRIES:
+                        self._seen_post_ids = set(list(self._seen_post_ids)[-(_DEDUP_MAX_ENTRIES // 2):])
+                self._persist_seen_post(post_id)
+
+    def _process_posted(self, post_id, root_id, user_id, channel_id, message, data):
+        """Process a posted event after dedup. Called from _handle_posted."""
         # Get username
         try:
             user_info = self.mm.get_user_info(user_id)
@@ -252,11 +265,6 @@ class Listener:
             reply = "Произошла ошибка при обработке сообщения. Попробуй ещё раз."
 
         if not reply:
-            if post_id:
-                with self._dedup_lock:
-                    self._inflight_post_ids.discard(post_id)
-                    self._seen_post_ids.add(post_id)
-                self._persist_seen_post(post_id)
             return
 
         # Send reply
@@ -278,16 +286,6 @@ class Listener:
                 self.mm.send_to_channel(reply, root_id=thread_root)
         except Exception as e:
             logger.error("Failed to send reply: %s", e, exc_info=True)
-        finally:
-            # Mark this post id as processed
-            if post_id:
-                with self._dedup_lock:
-                    self._inflight_post_ids.discard(post_id)
-                    self._seen_post_ids.add(post_id)
-                    # prevent unbounded growth
-                    if len(self._seen_post_ids) > _DEDUP_MAX_ENTRIES:
-                        self._seen_post_ids = set(list(self._seen_post_ids)[-(_DEDUP_MAX_ENTRIES // 2):])
-                self._persist_seen_post(post_id)
 
     def _handle_user_removed(self, event):
         """Handle a user leaving/removal from the Data Contracts channel."""

@@ -4,9 +4,13 @@ import json
 import logging
 import os
 import hashlib
+import time
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
+
+_WRITE_MAX_RETRIES = 3
+_WRITE_BACKOFF_BASE = 0.5  # seconds
 
 
 class Memory:
@@ -28,6 +32,25 @@ class Memory:
 
     # ── Generic file operations ─────────────────────────────────────
 
+    @staticmethod
+    def _retry_io(fn, description: str) -> None:
+        """Retry a write operation with exponential backoff on OSError."""
+        for attempt in range(1, _WRITE_MAX_RETRIES + 1):
+            try:
+                fn()
+                return
+            except OSError as e:
+                if attempt < _WRITE_MAX_RETRIES:
+                    delay = _WRITE_BACKOFF_BASE * (2 ** (attempt - 1))
+                    logger.warning(
+                        "I/O error on %s (attempt %d/%d), retrying in %.1fs: %s",
+                        description, attempt, _WRITE_MAX_RETRIES, delay, e,
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error("I/O error on %s after %d attempts: %s", description, _WRITE_MAX_RETRIES, e)
+                    raise
+
     def read_file(self, path: str) -> str | None:
         """Read a file relative to base_dir. Returns None if not found."""
         full = self._path(path)
@@ -39,19 +62,28 @@ class Memory:
             return None
 
     def write_file(self, path: str, content: str) -> None:
-        """Write content to a file relative to base_dir."""
+        """Write content to a file relative to base_dir (with retry)."""
         full = self._path(path)
-        os.makedirs(os.path.dirname(full), exist_ok=True)
-        with open(full, "w", encoding="utf-8") as f:
-            f.write(content)
+
+        def _do():
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as f:
+                f.write(content)
+
+        self._retry_io(_do, f"write_file({path})")
         logger.debug("Written: %s", full)
 
     def append_jsonl(self, path: str, data: dict) -> None:
-        """Append a JSON line to a JSONL file."""
+        """Append a JSON line to a JSONL file (with retry)."""
         full = self._path(path)
-        os.makedirs(os.path.dirname(full), exist_ok=True)
-        with open(full, "a", encoding="utf-8") as f:
-            f.write(json.dumps(data, ensure_ascii=False) + "\n")
+        line = json.dumps(data, ensure_ascii=False) + "\n"
+
+        def _do():
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "a", encoding="utf-8") as f:
+                f.write(line)
+
+        self._retry_io(_do, f"append_jsonl({path})")
 
     def read_json(self, path: str) -> dict | list | None:
         """Read and parse a JSON file. Returns None if not found."""
@@ -65,11 +97,16 @@ class Memory:
             return None
 
     def write_json(self, path: str, data) -> None:
-        """Write data as formatted JSON."""
+        """Write data as formatted JSON (with retry)."""
         full = self._path(path)
-        os.makedirs(os.path.dirname(full), exist_ok=True)
-        with open(full, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        serialized = json.dumps(data, ensure_ascii=False, indent=2)
+
+        def _do():
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as f:
+                f.write(serialized)
+
+        self._retry_io(_do, f"write_json({path})")
 
     # ── Contracts ───────────────────────────────────────────────────
 

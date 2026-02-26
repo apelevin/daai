@@ -8,6 +8,9 @@ import openai
 
 logger = logging.getLogger(__name__)
 
+# Default timeout for LLM API calls (seconds)
+_DEFAULT_TIMEOUT = int(os.environ.get("LLM_TIMEOUT_SECONDS", "120"))
+
 
 class LLMClient:
     def __init__(self):
@@ -19,9 +22,10 @@ class LLMClient:
         self.client = openai.OpenAI(
             base_url=base_url,
             api_key=api_key,
+            timeout=_DEFAULT_TIMEOUT,
         )
         self.log_costs = os.environ.get("LOG_LLM_COSTS", "true").lower() == "true"
-        logger.info("LLM client initialized: cheap=%s, heavy=%s", self.cheap_model, self.heavy_model)
+        logger.info("LLM client initialized: cheap=%s, heavy=%s, timeout=%ds", self.cheap_model, self.heavy_model, _DEFAULT_TIMEOUT)
 
     def call_cheap(self, system_prompt: str, user_message: str) -> str:
         """Fast cheap call for routing and simple responses."""
@@ -83,6 +87,10 @@ class LLMClient:
                     temperature=0.3,
                     frequency_penalty=0.3,
                 )
+            except openai.APITimeoutError as e:
+                logger.warning("LLM timeout in tool loop (turn %d): %s", turn, e)
+                time.sleep(2 * (turn + 1))
+                continue
             except openai.RateLimitError as e:
                 logger.warning("LLM rate limit in tool loop (turn %d): %s", turn, e)
                 time.sleep(2 * (turn + 1))
@@ -174,6 +182,13 @@ class LLMClient:
                         )
 
                 return content
+
+            except openai.APITimeoutError as e:
+                logger.warning("LLM timeout (attempt %d/%d): %s", attempt, max_retries, e)
+                if attempt < max_retries:
+                    time.sleep(backoff * attempt)
+                else:
+                    raise
 
             except openai.RateLimitError as e:
                 logger.warning("LLM rate limit (attempt %d/%d): %s", attempt, max_retries, e)
