@@ -78,12 +78,15 @@ def check_ambiguity(contract_md: str, glossary: dict | None) -> list[GlossaryIss
         if any_group_mentioned:
             continue
 
-        # build question
+        # build question with actionable fix suggestions
         opts = "; ".join([name for name, _ in groups])
+        keyword_hints = " или ".join(
+            [f"«{kws[0]}»" for _, kws in groups if kws]
+        )
         msg = (
             f"Термин «{canonical}» выглядит неоднозначно. "
-            f"Уточни, что именно имеется в виду: {opts}. "
-            "После уточнения обновим контракт."
+            f"Варианты: {opts}. "
+            f"Добавь в текст контракта одно из ключевых слов: {keyword_hints}."
         )
         issues.append(GlossaryIssue(canonical=canonical, message=msg))
 

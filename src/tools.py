@@ -198,7 +198,7 @@ class ToolExecutor:
 
     # ── Write tools ──────────────────────────────────────────────────────
 
-    def _tool_save_contract(self, contract_id: str, content: str) -> dict:
+    def _tool_save_contract(self, contract_id: str, content: str, force: bool = False) -> dict:
         """Validate + governance + glossary + save. Returns structured result."""
         errors: list[str] = []
         warnings: list[str] = []
@@ -244,12 +244,15 @@ class ToolExecutor:
         except Exception as e:
             logger.warning("Governance check failed: %s", e)
 
-        # 3. Glossary
+        # 3. Glossary (force=True downgrades to warnings)
         try:
             glossary = self.memory.read_json("context/glossary.json")
             glossary_issues = check_ambiguity(content, glossary)
             for gi in glossary_issues:
-                errors.append(f"Глоссарий: {gi.message}")
+                if force:
+                    warnings.append(f"Глоссарий: {gi.message}")
+                else:
+                    errors.append(f"Глоссарий: {gi.message}")
         except Exception:
             pass
 

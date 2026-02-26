@@ -9,7 +9,7 @@ from src.router import route, HEAVY_TYPES
 from src.analyzer import MetricsAnalyzer, render_conflicts
 from src.governance import find_contracts_requiring_review, render_review_report
 from src.lifecycle import set_status, ensure_in_review
-from src.tool_definitions import get_read_tools, get_write_tools
+from src.tool_definitions import get_tools_for_route
 from src.tools import ToolExecutor
 
 
@@ -58,6 +58,9 @@ class Agent:
 
     def _build_thread_context(self, thread_posts: list[dict], exclude_post_id: str | None = None) -> str | None:
         """Build thread context string from a list of thread posts."""
+        _THREAD_MAX_MESSAGES = 15
+        _THREAD_MAX_CHARS = 4000
+
         context_parts = []
         for tp in thread_posts:
             if exclude_post_id and tp.get("id") == exclude_post_id:
@@ -72,7 +75,18 @@ class Agent:
                 except Exception:
                     tp_name = "unknown"
             context_parts.append(f"{tp_name}: {tp['message']}")
-        return "\n".join(context_parts) if context_parts else None
+
+        # Keep last N messages
+        if len(context_parts) > _THREAD_MAX_MESSAGES:
+            context_parts = context_parts[-_THREAD_MAX_MESSAGES:]
+
+        result = "\n".join(context_parts)
+
+        # Truncate by chars, keep tail
+        if len(result) > _THREAD_MAX_CHARS:
+            result = "…(начало треда обрезано)\n" + result[-_THREAD_MAX_CHARS:]
+
+        return result if result else None
 
     def _handle_role_assignments_inline(self, message: str) -> str | None:
         """Handle role assignment messages without router/LLM.
@@ -494,14 +508,25 @@ class Agent:
         route_data: dict,
     ) -> str:
         """Process message using tool-use / function-calling path."""
-        # Load system prompt (always use full prompt for tool path)
-        system_prompt = self.memory.read_file("prompts/system_full.md") or ""
+        # Route-specific system prompt: full prompt only for heavy contract operations
+        _FULL_PROMPT_TYPES = {"contract_discussion", "new_contract_init", "problem_report"}
+
+        if route_data.get("type") in _FULL_PROMPT_TYPES:
+            system_prompt = self.memory.read_file("prompts/system_full.md") or ""
+        else:
+            system_prompt = self.memory.read_file("prompts/system_short.md") or ""
 
         # Load context files
         load_files = route_data.get("load_files", [])
         context_files = self.memory.load_files(load_files) if load_files else ""
 
-        participant_profile = self.memory.get_participant(username) or ""
+        # Load participant profile only for routes that need it
+        _PROFILE_ROUTES = {"contract_discussion", "new_contract_init", "problem_report", "profile_intro"}
+
+        if route_data.get("type") in _PROFILE_ROUTES:
+            participant_profile = self.memory.get_participant(username) or ""
+        else:
+            participant_profile = ""
         if participant_profile:
             context_files += f"\n\n--- participants/{username}.md ---\n{participant_profile}"
 
@@ -523,13 +548,8 @@ class Agent:
         if thread_context:
             user_msg = f"Контекст треда:\n{thread_context}\n\nНовое сообщение:\n{user_msg}"
 
-        # Determine available tools based on context
-        tools = get_read_tools()
-        # Only expose write tools in channel for heavy contract operations
-        is_channel = channel_type != "dm"
-        is_heavy = route_data.get("type") in HEAVY_TYPES
-        if is_channel and is_heavy:
-            tools += get_write_tools()
+        # Determine available tools based on route type
+        tools = get_tools_for_route(route_data.get("type", ""), channel_type != "dm")
 
         executor = ToolExecutor(self.memory, self.mm, self.llm)
 

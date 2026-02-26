@@ -53,7 +53,7 @@ class LLMClient:
         tool_executor: Callable[[str, dict], dict],
         *,
         max_turns: int = 5,
-        max_tokens: int = 2000,
+        max_tokens: int = 4000,
     ) -> str:
         """Agentic loop: LLM calls tools, gets results, generates final text.
 
@@ -81,6 +81,7 @@ class LLMClient:
                     tools=tools if tools else openai.NOT_GIVEN,
                     max_tokens=max_tokens,
                     temperature=0.3,
+                    frequency_penalty=0.3,
                 )
             except openai.RateLimitError as e:
                 logger.warning("LLM rate limit in tool loop (turn %d): %s", turn, e)

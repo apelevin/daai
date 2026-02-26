@@ -111,11 +111,13 @@ WRITE_TOOLS: list[dict] = [
         "save_contract",
         "Валидирует контракт (структура + governance + glossary) и сохраняет если всё ок. "
         "Возвращает {success: bool, contract_id: str, errors: [...], warnings: [...]}. "
-        "При ошибках контракт НЕ сохраняется — объясни пользователю все проблемы.",
+        "При ошибках контракт НЕ сохраняется — объясни пользователю все проблемы. "
+        "force=true: glossary issues становятся warnings (не блокируют сохранение).",
         {
             "properties": {
                 "contract_id": {"type": "string", "description": "ID контракта"},
                 "content": {"type": "string", "description": "Полный markdown текст контракта"},
+                "force": {"type": "boolean", "description": "Если true — glossary issues не блокируют сохранение (становятся warnings)", "default": False},
             },
             "required": ["contract_id", "content"],
         },
@@ -225,3 +227,21 @@ def get_write_tools() -> list[dict]:
 def get_all_tools() -> list[dict]:
     """Return all tool definitions."""
     return get_read_tools() + get_write_tools()
+
+
+_GENERAL_TOOL_NAMES = {"read_contract", "read_draft", "list_contracts"}
+
+
+def get_tools_for_route(route_type: str, is_channel: bool) -> list[dict]:
+    """Return only relevant tools for a given route type."""
+    if route_type == "profile_intro":
+        return [t for t in WRITE_TOOLS if t["function"]["name"] == "update_participant"]
+
+    if route_type == "general_question":
+        return [t for t in READ_TOOLS if t["function"]["name"] in _GENERAL_TOOL_NAMES]
+
+    # contract_discussion, new_contract_init, problem_report — full set
+    tools = list(READ_TOOLS)
+    if is_channel:
+        tools += list(WRITE_TOOLS)
+    return tools
