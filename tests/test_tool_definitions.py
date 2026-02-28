@@ -51,7 +51,7 @@ class ToolDefinitionsTest(unittest.TestCase):
             "save_contract", "save_draft", "update_discussion",
             "add_reminder", "update_participant", "save_decision",
             "assign_role", "set_contract_status",
-            "request_approval", "approve_contract", "create_poll",
+            "request_approval", "approve_contract", "ask_question",
         }
         read_names = {t["function"]["name"] for t in get_read_tools()}
         write_names = {t["function"]["name"] for t in get_write_tools()}

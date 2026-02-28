@@ -352,6 +352,68 @@ class TestFormatSuggestionMessage:
         assert "@olga_cs" in msg
         assert "начни контракт" in msg
 
+    def test_format_multiple_as_choice(self, engine):
+        candidates = [
+            SuggestionCandidate(
+                contract_id="usage_churn",
+                metric_name="Usage Churn",
+                tree_path="Usage Churn → Retention → MAU → Extra Time",
+                priority=6,
+                reason="test",
+                stakeholders=["olga_cs"],
+                related_to="contract_churn",
+            ),
+            SuggestionCandidate(
+                contract_id="win_ni",
+                metric_name="WIN NI",
+                tree_path="WIN NI → New Clients → MAU → Extra Time",
+                priority=1,
+                reason="test",
+                stakeholders=["ivan_sales"],
+                related_to="contract_churn",
+            ),
+        ]
+        msg = engine.format_suggestion_message(candidates, "agreed:contract_churn")
+        # Should be a numbered choice list, not a /poll command
+        assert "/poll" not in msg
+        assert "1️⃣" in msg
+        assert "2️⃣" in msg
+        assert "Usage Churn" in msg
+        assert "WIN NI" in msg
+        assert "@olga_cs" in msg
+        assert "@ivan_sales" in msg
+        assert "ваше мнение важно" in msg
+        assert "начни контракт" in msg
+
+    def test_format_choice_no_stakeholders(self, engine):
+        candidates = [
+            SuggestionCandidate(
+                contract_id="metric_a",
+                metric_name="Metric A",
+                tree_path="Metric A → Extra Time",
+                priority=None,
+                reason="test",
+                stakeholders=[],
+                related_to=None,
+            ),
+            SuggestionCandidate(
+                contract_id="metric_b",
+                metric_name="Metric B",
+                tree_path="Metric B → Extra Time",
+                priority=None,
+                reason="test",
+                stakeholders=[],
+                related_to=None,
+            ),
+        ]
+        msg = engine.format_suggestion_message(candidates, "test")
+        assert "1️⃣" in msg
+        assert "2️⃣" in msg
+        assert "Metric A" in msg
+        assert "Metric B" in msg
+        # No stakeholders → no "ваше мнение важно" line with mentions
+        assert "ваше мнение важно" not in msg
+
     def test_format_empty(self, engine):
         assert engine.format_suggestion_message([], "test") == ""
 

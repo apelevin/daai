@@ -339,14 +339,13 @@ class SuggestionEngine:
         self,
         candidates: list[SuggestionCandidate],
         trigger: str,
-        use_poll: bool = False,
     ) -> str:
         """Format suggestion(s) as a Mattermost message."""
         if not candidates:
             return ""
 
-        if use_poll and len(candidates) > 1:
-            return self._format_poll_message(candidates)
+        if len(candidates) > 1:
+            return self._format_choice_message(candidates)
 
         parts: list[str] = []
         for c in candidates:
@@ -362,10 +361,30 @@ class SuggestionEngine:
 
         return "\n\n---\n\n".join(parts)
 
-    def _format_poll_message(self, candidates: list[SuggestionCandidate]) -> str:
-        """Format as poll command for Matterpoll."""
-        options = " ".join(f'"{c.metric_name}"' for c in candidates)
-        return f'/poll "Какой контракт согласуем следующим?" {options}'
+    def _format_choice_message(self, candidates: list[SuggestionCandidate]) -> str:
+        """Format multiple candidates as a numbered choice list with @mentions."""
+        emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+        lines = [":dart: **Какой контракт согласуем следующим?**\n"]
+        for i, c in enumerate(candidates[:5]):
+            stakeholders_str = ", ".join(f"@{s}" for s in c.stakeholders) if c.stakeholders else ""
+            lines.append(f"{emojis[i]} **{c.metric_name}** (`{c.contract_id}`)")
+            lines.append(f"   Путь: {c.tree_path}")
+            if stakeholders_str:
+                lines.append(f"   Ответственные: {stakeholders_str}")
+
+        # Collect unique stakeholders for @mention
+        all_stakeholders: list[str] = []
+        for c in candidates[:5]:
+            for s in (c.stakeholders or []):
+                if s not in all_stakeholders:
+                    all_stakeholders.append(s)
+
+        lines.append("")
+        if all_stakeholders:
+            mentions = " ".join(f"@{s}" for s in all_stakeholders)
+            lines.append(f"{mentions} — ваше мнение важно")
+        lines.append('Напишите номер или: `начни контракт <id>`')
+        return "\n".join(lines)
 
     def format_coverage_message(self, candidates: list[SuggestionCandidate]) -> str:
         """Format coverage scan results as a message."""

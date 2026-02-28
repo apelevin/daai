@@ -105,24 +105,6 @@ class MattermostClient:
             post["root_id"] = root_id
         return self.driver.posts.create_post(post)
 
-    # ── Polls (Matterpoll plugin) ───────────────────────────────────
-
-    def create_poll(self, channel_id: str, question: str, options: list[str]) -> dict:
-        """Create a poll via Matterpoll slash command."""
-        opts = " ".join([f'"{o}"' for o in options])
-        command = f'/poll "{question}" {opts}'
-        try:
-            return self.driver.client.post(
-                "/commands/execute",
-                body={
-                    "channel_id": channel_id,
-                    "command": command,
-                },
-            )
-        except Exception as e:
-            logger.error("Failed to create poll: %s", e)
-            return {"error": str(e)}
-
     # ── Reading data ────────────────────────────────────────────────
 
     def get_user_info(self, user_id: str) -> dict:

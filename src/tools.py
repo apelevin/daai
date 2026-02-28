@@ -506,8 +506,7 @@ class ToolExecutor:
                 candidates = engine.suggest_after_agreement(contract_id)
                 candidates = engine.filter_already_suggested(candidates)
                 if candidates:
-                    use_poll = len(candidates) > 1
-                    msg = engine.format_suggestion_message(candidates[:2], f"agreed:{contract_id}", use_poll=use_poll)
+                    msg = engine.format_suggestion_message(candidates[:2], f"agreed:{contract_id}")
                     if self.mm and msg:
                         resp = self.mm.send_to_channel(msg)
                         engine.record_suggestion(candidates[:2], f"agreed:{contract_id}", resp.get("id"))
@@ -612,18 +611,45 @@ class ToolExecutor:
         logger.info("Assigned role %s to %s", role, username)
         return {"success": True, "role": role, "username": username}
 
-    def _tool_create_poll(self, question: str, options: list, channel_id: str = "") -> dict:
+    def _tool_ask_question(self, question: str, options: list, target_roles: list = None) -> dict:
         if not self.mm:
             return {"error": "Mattermost client not available"}
         if not isinstance(options, list) or len(options) < 2:
             return {"error": "options must be a list with at least 2 items"}
-        cid = channel_id or (self.mm.channel_id if hasattr(self.mm, "channel_id") else "")
-        if not cid:
-            return {"error": "channel_id is required"}
-        result = self.mm.create_poll(cid, question, options)
-        if isinstance(result, dict) and result.get("error"):
-            return {"success": False, "error": result["error"]}
-        return {"success": True}
+
+        mentions = self._resolve_mentions(target_roles)
+
+        emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+        lines = [f":question: **{question}**\n"]
+        for i, opt in enumerate(options[:5]):
+            lines.append(f"{emojis[i]} {opt}")
+        lines.append("")
+        if mentions:
+            lines.append(f"{mentions} — ваше мнение важно")
+
+        self.mm.send_to_channel("\n".join(lines))
+        return {"success": True, "mentions": mentions}
+
+    def _resolve_mentions(self, target_roles: list = None) -> str:
+        """Resolve circle names to @mentions of leads."""
+        circles_md = self.memory.read_file("context/circles.md") or ""
+        from src.suggestion_engine import _parse_circles
+        circle_leads = _parse_circles(circles_md)
+
+        if target_roles:
+            users: list[str] = []
+            for role in target_roles:
+                for circle_name, username in circle_leads.items():
+                    if role.lower() in circle_name.lower() and username not in users:
+                        users.append(username)
+            if users:
+                return " ".join(f"@{u}" for u in users)
+
+        # Fallback: active participants (max 10)
+        active = self.memory.list_participants(active_only=True)
+        if active:
+            return " ".join(f"@{u}" for u in active[:10])
+        return ""
 
     def _tool_request_approval(self, contract_id: str) -> dict:
         """Start approval workflow: determine required roles, notify, track state."""

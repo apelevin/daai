@@ -269,20 +269,22 @@ WRITE_TOOLS: list[dict] = [
         },
     ),
     _tool(
-        "create_poll",
-        "Создаёт опрос через Matterpoll. Используй когда нужно голосование: "
-        "приоритизация контрактов, развилки в обсуждении, подтверждение консенсуса.",
+        "ask_question",
+        "Задаёт вопрос с вариантами ответа в канале. "
+        "Тегает релевантных участников по компетенции (из circles.md). "
+        "Используй для приоритизации, развилок в обсуждении, подтверждения консенсуса.",
         {
             "properties": {
-                "question": {"type": "string", "description": "Вопрос для голосования"},
+                "question": {"type": "string", "description": "Вопрос"},
                 "options": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Варианты ответа (2-5 штук)",
                 },
-                "channel_id": {
-                    "type": "string",
-                    "description": "ID канала (по умолчанию — Data Contracts канал)",
+                "target_roles": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Круги для таргетирования (напр. 'Sales', 'Product'). Пусто = все активные.",
                 },
             },
             "required": ["question", "options"],
