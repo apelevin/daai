@@ -14,9 +14,10 @@ _DEDUP_FILE = "tasks/seen_posts.json"
 
 
 class Listener:
-    def __init__(self, agent, mattermost_client):
+    def __init__(self, agent, mattermost_client, planner=None):
         self.agent = agent
         self.mm = mattermost_client
+        self.planner = planner
         # De-duplication: Mattermost WS can occasionally deliver duplicate 'posted' events.
         # Also guard against concurrent callback invocations.
         self._seen_post_ids = set()
@@ -262,6 +263,13 @@ class Listener:
         except Exception as e:
             logger.error("Agent failed to process message: %s", e, exc_info=True)
             reply = "Произошла ошибка при обработке сообщения. Попробуй ещё раз."
+
+        # Notify planner about thread activity
+        if self.planner and root_id:
+            try:
+                self.planner.notify_thread_activity(root_id, username)
+            except Exception as e:
+                logger.debug("Planner notify failed: %s", e)
 
         if not reply:
             return

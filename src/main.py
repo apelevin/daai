@@ -16,6 +16,7 @@ from src.memory import Memory
 from src.agent import Agent
 from src.listener import Listener
 from src.scheduler import Scheduler
+from src.planner import ContinuousPlanner
 
 # ── Logging ─────────────────────────────────────────────────────────
 
@@ -37,7 +38,8 @@ def main():
         llm = LLMClient()
         mm = MattermostClient()
         agent = Agent(llm, memory, mm)
-        listener = Listener(agent, mm)
+        planner = ContinuousPlanner(memory, mm, llm)
+        listener = Listener(agent, mm, planner=planner)
         scheduler = Scheduler(agent, memory, mm, llm)
     except Exception as e:
         logger.fatal("Failed to initialize: %s", e, exc_info=True)
@@ -61,6 +63,15 @@ def main():
     )
     scheduler_thread.start()
     logger.info("Scheduler thread started")
+
+    # ── Start planner in background thread ────────────────────
+    planner_thread = threading.Thread(
+        target=planner.start,
+        name="planner",
+        daemon=True,
+    )
+    planner_thread.start()
+    logger.info("Planner thread started")
 
     # ── Start listener in main thread (blocks) ──────────────────
     logger.info("Starting WebSocket listener (main thread)...")

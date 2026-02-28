@@ -512,6 +512,33 @@ class Memory:
         for tmp, final in staged:
             os.replace(tmp, final)
 
+    # ── Planner state ────────────────────────────────────────────────────
+
+    _PLANNER_STATE_FILE = "tasks/planner_state.json"
+    _PLANNER_LOG_FILE = "tasks/planner_log.jsonl"
+
+    def get_planner_state(self) -> dict:
+        """Read planner state. Returns empty structure if not found."""
+        data = self.read_json(self._PLANNER_STATE_FILE)
+        if isinstance(data, dict):
+            return data
+        return {
+            "initiatives": [],
+            "daily_stats": {},
+            "cooldowns": {},
+            "last_plan_at": None,
+        }
+
+    def save_planner_state(self, state: dict) -> None:
+        """Save planner state."""
+        self.write_json(self._PLANNER_STATE_FILE, state)
+
+    def append_planner_log(self, entry: dict) -> None:
+        """Append an entry to planner log."""
+        if "ts" not in entry:
+            entry["ts"] = datetime.now(timezone.utc).isoformat()
+        self.append_jsonl(self._PLANNER_LOG_FILE, entry)
+
     # ── Audit log ─────────────────────────────────────────────────────
 
     def audit_log(self, action: str, **kwargs) -> None:
