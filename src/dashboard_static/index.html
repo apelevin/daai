@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DAAI Dashboard</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>DAAI Agent Dashboard</h1>
+        </div>
+        <div class="header-right">
+            <span id="last-update"></span>
+            <button id="refresh-btn" onclick="refreshAll()">Refresh</button>
+            <label class="auto-refresh">
+                <input type="checkbox" id="auto-refresh-toggle" checked>
+                Auto (60s)
+            </label>
+        </div>
+    </header>
+
+    <main>
+        <!-- Overview cards -->
+        <section id="overview" class="cards-row">
+            <div class="card" id="card-total"><div class="card-value">-</div><div class="card-label">Total contracts</div></div>
+            <div class="card card-green" id="card-agreed"><div class="card-value">-</div><div class="card-label">Agreed</div></div>
+            <div class="card card-yellow" id="card-review"><div class="card-value">-</div><div class="card-label">In review</div></div>
+            <div class="card card-red" id="card-conflicts"><div class="card-value">-</div><div class="card-label">Active conflicts</div></div>
+            <div class="card card-blue" id="card-initiatives"><div class="card-value">-</div><div class="card-label">Active initiatives</div></div>
+        </section>
+
+        <!-- Stale items alert -->
+        <section id="stale-section" class="stale-alert" style="display:none">
+            <h3>Stale Items</h3>
+            <div id="stale-items"></div>
+        </section>
+
+        <!-- Two-column layout -->
+        <div class="grid-2col">
+            <!-- Contracts table -->
+            <section class="panel">
+                <h2>Contracts</h2>
+                <table id="contracts-table">
+                    <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Agreed</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </section>
+
+            <!-- Metrics tree -->
+            <section class="panel">
+                <h2>Metrics Tree</h2>
+                <div id="tree-coverage" class="tree-stats"></div>
+                <div id="metrics-tree" class="tree-container"></div>
+            </section>
+        </div>
+
+        <div class="grid-2col">
+            <!-- Conflicts -->
+            <section class="panel">
+                <h2>Conflicts</h2>
+                <table id="conflicts-table">
+                    <thead><tr><th>Severity</th><th>Type</th><th>Title</th><th>Contracts</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </section>
+
+            <!-- Planner -->
+            <section class="panel">
+                <h2>Planner Initiatives</h2>
+                <div id="planner-content"></div>
+            </section>
+        </div>
+
+        <div class="grid-2col">
+            <!-- Scheduler -->
+            <section class="panel">
+                <h2>Scheduler</h2>
+                <div id="scheduler-content"></div>
+            </section>
+
+            <!-- Participants -->
+            <section class="panel">
+                <h2>Participants</h2>
+                <div id="participants-content"></div>
+            </section>
+        </div>
+
+        <!-- Activity feed -->
+        <section class="panel full-width">
+            <h2>Activity Feed <span class="subtitle">(last 50)</span></h2>
+            <div id="activity-feed"></div>
+        </section>
+    </main>
+
+    <!-- Contract detail modal -->
+    <div id="modal-overlay" class="modal-overlay" style="display:none" onclick="closeModal(event)">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="static/app.js"></script>
+</body>
+</html>

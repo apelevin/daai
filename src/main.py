@@ -17,6 +17,7 @@ from src.agent import Agent
 from src.listener import Listener
 from src.scheduler import Scheduler
 from src.planner import ContinuousPlanner
+from src.dashboard import start_dashboard
 
 # ── Logging ─────────────────────────────────────────────────────────
 
@@ -72,6 +73,10 @@ def main():
     )
     planner_thread.start()
     logger.info("Planner thread started")
+
+    # ── Start dashboard in background thread ────────────────────
+    dashboard_thread = start_dashboard(memory)
+    logger.info("Dashboard thread started")
 
     # ── Start listener in main thread (blocks) ──────────────────
     logger.info("Starting WebSocket listener (main thread)...")

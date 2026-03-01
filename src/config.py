@@ -53,5 +53,9 @@ PLANNER_COOLDOWN_HOURS = _int("PLANNER_COOLDOWN_HOURS", 48)
 PLANNER_WAIT_BEFORE_FOLLOWUP_HOURS = _int("PLANNER_WAIT_BEFORE_FOLLOWUP_HOURS", 24)
 PLANNER_STALE_INITIATIVE_DAYS = _int("PLANNER_STALE_INITIATIVE_DAYS", 14)
 
+# ── Dashboard ───────────────────────────────────────────────────────────────
+DASHBOARD_HOST = os.environ.get("DASHBOARD_HOST", "0.0.0.0")
+DASHBOARD_PORT = _int("DASHBOARD_PORT", 8050)
+
 # ── LLM ──────────────────────────────────────────────────────────────────────
 LLM_TIMEOUT_SECONDS = _int("LLM_TIMEOUT_SECONDS", 120)
