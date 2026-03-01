@@ -256,6 +256,27 @@ async function fetchPlanner() {
     }
 }
 
+async function forceRunPlanner() {
+    const btn = document.getElementById("force-run-btn");
+    btn.disabled = true;
+    btn.textContent = "Running...";
+    try {
+        const resp = await fetch(API + "/api/planner/run", { method: "POST" });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            alert("Planner error: " + (err.detail || resp.statusText));
+            return;
+        }
+        btn.textContent = "Started!";
+        setTimeout(() => { btn.textContent = "Force Run"; btn.disabled = false; }, 3000);
+    } catch (e) {
+        console.error("Force run failed:", e);
+        alert("Force run failed: " + e.message);
+        btn.textContent = "Force Run";
+        btn.disabled = false;
+    }
+}
+
 // ── Scheduler ────────────────────────────────────────────────────────────────
 
 async function fetchScheduler() {

@@ -75,7 +75,7 @@ def main():
     logger.info("Planner thread started")
 
     # ── Start dashboard in background thread ────────────────────
-    dashboard_thread = start_dashboard(memory)
+    dashboard_thread = start_dashboard(memory, planner)
     logger.info("Dashboard thread started")
 
     # ── Start listener in main thread (blocks) ──────────────────

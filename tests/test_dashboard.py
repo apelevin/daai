@@ -285,6 +285,24 @@ class TestParticipants:
         assert alice["onboarded"] is True
 
 
+class TestPlannerRun:
+    def test_force_run_starts_cycle(self, memory):
+        """POST /api/planner/run with planner available returns 200."""
+        mock_planner = type("MockPlanner", (), {"_run_cycle": lambda self: None})()
+        app = create_app(memory, planner=mock_planner)
+        client = TestClient(app)
+        resp = client.post("/api/planner/run")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "started"}
+
+    def test_force_run_no_planner(self, memory):
+        """POST /api/planner/run without planner returns 503."""
+        app = create_app(memory, planner=None)
+        client = TestClient(app)
+        resp = client.post("/api/planner/run")
+        assert resp.status_code == 503
+
+
 class TestIndexPage:
     def test_serves_html(self, client):
         resp = client.get("/")

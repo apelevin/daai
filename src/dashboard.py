@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "dashboard_static"
 
 _memory: Memory | None = None
+_planner = None  # ContinuousPlanner | None
 
 
 def _get_memory() -> Memory:
@@ -34,7 +35,7 @@ def _get_memory() -> Memory:
     return _memory
 
 
-def create_app(memory: Memory | None = None) -> FastAPI:
+def create_app(memory: Memory | None = None, planner=None) -> FastAPI:
     """Create the FastAPI application."""
     root_path = os.environ.get("DASHBOARD_ROOT_PATH", "")
     app = FastAPI(title="DAAI Dashboard", root_path=root_path)
@@ -42,6 +43,9 @@ def create_app(memory: Memory | None = None) -> FastAPI:
     if memory is not None:
         global _memory
         _memory = memory
+
+    global _planner
+    _planner = planner
 
     # ── Static files ─────────────────────────────────────────────────────
     @app.get("/", response_class=HTMLResponse)
@@ -132,6 +136,13 @@ def create_app(memory: Memory | None = None) -> FastAPI:
     def api_planner():
         mem = _get_memory()
         return mem.get_planner_state()
+
+    @app.post("/api/planner/run")
+    def api_planner_run():
+        if _planner is None:
+            raise HTTPException(503, "Planner not available")
+        threading.Thread(target=_planner._run_cycle, daemon=True).start()
+        return {"status": "started"}
 
     # ── API: Scheduler ───────────────────────────────────────────────────
     @app.get("/api/scheduler")
@@ -245,9 +256,9 @@ def _serialize_tree_node(node) -> dict:
 # ── Startup ──────────────────────────────────────────────────────────────────
 
 
-def start_dashboard(memory: Memory) -> threading.Thread:
+def start_dashboard(memory: Memory, planner=None) -> threading.Thread:
     """Start the dashboard in a daemon thread. Returns the thread."""
-    app = create_app(memory)
+    app = create_app(memory, planner=planner)
 
     def _run():
         uvicorn.run(
