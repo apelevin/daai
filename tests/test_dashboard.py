@@ -192,6 +192,10 @@ class TestContracts:
         contracts = memory.list_contracts()
         ids = [c["id"] for c in contracts]
         assert "mau" not in ids
+        # Verify planner initiative abandoned
+        state = memory.get_planner_state()
+        mau_init = [i for i in state["initiatives"] if i["contract_id"] == "mau"]
+        assert all(i["status"] == "abandoned" for i in mau_init)
 
     def test_delete_not_found(self, client):
         resp = client.delete("/api/contracts/nonexistent")

@@ -225,6 +225,17 @@ class Memory:
                 del threads[contract_id]
                 self.write_json(self._ACTIVE_THREADS_FILE, threads_data)
 
+        # Abandon planner initiatives for this contract
+        state = self.get_planner_state()
+        changed = False
+        for init in state.get("initiatives", []):
+            if init.get("contract_id") == contract_id and init.get("status") not in ("completed", "abandoned"):
+                init["status"] = "abandoned"
+                init["updated_at"] = datetime.now(timezone.utc).isoformat()
+                changed = True
+        if changed:
+            self.save_planner_state(state)
+
         self.audit_log("contract_deleted", contract_id=contract_id)
         return True
 
