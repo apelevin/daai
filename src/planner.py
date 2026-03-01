@@ -158,9 +158,10 @@ class ContinuousPlanner:
             # 1. GATHER
             gathered = self._gather()
 
-            # 2. Housekeeping — abandon stale initiatives
+            # 2. Housekeeping — abandon stale and orphaned initiatives
             state = self.memory.get_planner_state()
             self._abandon_stale_initiatives(state, now)
+            self._abandon_orphaned_initiatives(state, gathered, now)
 
             # 3. SCORE
             candidates = self._score(gathered, state)
@@ -632,3 +633,15 @@ class ContinuousPlanner:
         # Reset actions_today for all initiatives (new day)
         for init in state.get("initiatives", []):
             init["actions_today"] = 0
+
+    def _abandon_orphaned_initiatives(self, state: dict, gathered: dict, now: datetime):
+        """Abandon initiatives whose contract no longer exists in the index."""
+        valid_ids = {c.get("id") for c in gathered.get("contracts", []) if c.get("id")}
+        for init in state.get("initiatives", []):
+            if init.get("status") in ("completed", "abandoned"):
+                continue
+            if init.get("contract_id") not in valid_ids:
+                init["status"] = "abandoned"
+                init["updated_at"] = now.isoformat()
+                logger.info("Planner: abandoned orphaned initiative %s (contract %s deleted)",
+                            init.get("id"), init.get("contract_id"))

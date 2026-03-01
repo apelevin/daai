@@ -258,6 +258,39 @@ class TestInitiativeManagement:
         assert state["initiatives"][0]["status"] == "active"
 
 
+    def test_abandon_orphaned_initiative(self, planner, memory):
+        state = memory.get_planner_state()
+        now = datetime.now(timezone.utc)
+        state["initiatives"] = [{
+            "id": "init_orphan",
+            "contract_id": "deleted_contract",
+            "status": "active",
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }]
+        gathered = {"contracts": [{"id": "existing_contract"}]}
+
+        planner._abandon_orphaned_initiatives(state, gathered, now)
+
+        assert state["initiatives"][0]["status"] == "abandoned"
+
+    def test_valid_initiative_not_orphaned(self, planner, memory):
+        state = memory.get_planner_state()
+        now = datetime.now(timezone.utc)
+        state["initiatives"] = [{
+            "id": "init_valid",
+            "contract_id": "existing_contract",
+            "status": "active",
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }]
+        gathered = {"contracts": [{"id": "existing_contract"}]}
+
+        planner._abandon_orphaned_initiatives(state, gathered, now)
+
+        assert state["initiatives"][0]["status"] == "active"
+
+
 class TestNotifyThreadActivity:
     def test_removes_user_from_waiting(self, planner, memory):
         state = memory.get_planner_state()
