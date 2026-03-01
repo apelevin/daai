@@ -4,6 +4,8 @@ services:
   agent:
     build: .
     env_file: .env
+    ports:
+      - "8050:8050"
     volumes:
       - ./prompts:/app/prompts:ro
       - ./context:/app/context:ro

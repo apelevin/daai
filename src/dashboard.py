@@ -16,7 +16,6 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from src.config import DASHBOARD_HOST, DASHBOARD_PORT
 from src.memory import Memory
@@ -37,22 +36,29 @@ def _get_memory() -> Memory:
 
 def create_app(memory: Memory | None = None) -> FastAPI:
     """Create the FastAPI application."""
-    app = FastAPI(title="DAAI Dashboard", root_path="/dashboard")
+    root_path = os.environ.get("DASHBOARD_ROOT_PATH", "")
+    app = FastAPI(title="DAAI Dashboard", root_path=root_path)
 
     if memory is not None:
         global _memory
         _memory = memory
 
     # ── Static files ─────────────────────────────────────────────────────
-    if STATIC_DIR.is_dir():
-        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
     @app.get("/", response_class=HTMLResponse)
     def index():
         index_file = STATIC_DIR / "index.html"
         if not index_file.exists():
             return HTMLResponse("<h1>Dashboard static files not found</h1>", status_code=500)
         return FileResponse(str(index_file), media_type="text/html")
+
+    @app.get("/static/{file_path:path}")
+    def static_file(file_path: str):
+        full = STATIC_DIR / file_path
+        if not full.exists() or not full.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        media_types = {".css": "text/css", ".js": "application/javascript", ".html": "text/html"}
+        media = media_types.get(full.suffix, "application/octet-stream")
+        return FileResponse(str(full), media_type=media)
 
     # ── API: Overview ────────────────────────────────────────────────────
     @app.get("/api/overview")
