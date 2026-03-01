@@ -83,7 +83,7 @@ async function fetchContracts() {
         tbody.innerHTML = "";
 
         if (!data.contracts.length) {
-            tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No contracts</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No contracts</td></tr>';
             return;
         }
 
@@ -94,7 +94,7 @@ async function fetchContracts() {
         for (const c of data.contracts) {
             const tr = document.createElement("tr");
             tr.className = "clickable";
-            tr.onclick = () => showContract(c.id);
+            tr.onclick = (e) => { if (!e.target.closest(".delete-btn")) showContract(c.id); };
 
             const statusClass = "badge badge-" + (c.status || "draft").replace(/\s+/g, "-");
             tr.innerHTML = `
@@ -102,6 +102,7 @@ async function fetchContracts() {
                 <td>${esc(c.name || c.id)}</td>
                 <td><span class="${statusClass}">${esc(c.status || "draft")}</span></td>
                 <td>${c.agreed_date ? esc(c.agreed_date) : "-"}</td>
+                <td><button class="delete-btn" title="Delete contract" onclick="deleteContract('${esc(c.id)}', event)">&times;</button></td>
             `;
             tbody.appendChild(tr);
 
@@ -134,6 +135,23 @@ async function showContract(contractId) {
 function closeModal(event) {
     if (!event || event.target === document.getElementById("modal-overlay")) {
         document.getElementById("modal-overlay").style.display = "none";
+    }
+}
+
+async function deleteContract(contractId, event) {
+    event.stopPropagation();
+    if (!confirm("Delete contract \"" + contractId + "\"? This will remove it from the index and delete associated files.")) return;
+    try {
+        const resp = await fetch(API + "/api/contracts/" + encodeURIComponent(contractId), { method: "DELETE" });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            alert("Delete failed: " + (err.detail || resp.statusText));
+            return;
+        }
+        refreshAll();
+    } catch (e) {
+        console.error("Delete contract failed:", e);
+        alert("Delete failed: " + e.message);
     }
 }
 

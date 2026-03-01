@@ -184,6 +184,19 @@ class TestContracts:
         resp = client.get("/api/contracts/nonexistent")
         assert resp.status_code == 404
 
+    def test_delete_contract(self, client, memory):
+        resp = client.delete("/api/contracts/mau")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "deleted", "id": "mau"}
+        # Verify removed from index
+        contracts = memory.list_contracts()
+        ids = [c["id"] for c in contracts]
+        assert "mau" not in ids
+
+    def test_delete_not_found(self, client):
+        resp = client.delete("/api/contracts/nonexistent")
+        assert resp.status_code == 404
+
 
 class TestTree:
     def test_returns_tree(self, client):

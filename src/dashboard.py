@@ -112,6 +112,14 @@ def create_app(memory: Memory | None = None, planner=None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Contract not found")
         return {"id": contract_id, "markdown": content}
 
+    @app.delete("/api/contracts/{contract_id}")
+    def api_contract_delete(contract_id: str):
+        mem = _get_memory()
+        deleted = mem.delete_contract(contract_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Contract not found")
+        return {"status": "deleted", "id": contract_id}
+
     # ── API: Metrics tree ────────────────────────────────────────────────
     @app.get("/api/tree")
     def api_tree():

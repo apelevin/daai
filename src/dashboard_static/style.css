@@ -142,6 +142,20 @@ tbody td {
 tbody tr:hover { background: var(--surface-hover); }
 tbody tr.clickable { cursor: pointer; }
 
+.delete-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+    opacity: 0.4;
+    transition: opacity 0.15s, color 0.15s;
+}
+.delete-btn:hover { opacity: 1; color: var(--red); }
+
 /* Status badges */
 .badge {
     display: inline-block;

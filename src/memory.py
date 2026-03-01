@@ -170,6 +170,64 @@ class Memory:
         for entry in history_entries:
             self.append_jsonl(history_path, entry)
 
+    def delete_contract(self, contract_id: str) -> bool:
+        """Remove a contract from the index and delete associated files.
+
+        Removes: contracts/{id}.md, drafts/{id}.md, drafts/{id}_discussion.json.
+        Also cleans up queue, reminders, and active threads references.
+        Logs the deletion to audit. Returns True if contract was found.
+        """
+        # Remove from index
+        index = self.read_json("contracts/index.json") or {}
+        contracts = index.get("contracts", [])
+        original_len = len(contracts)
+        contracts = [c for c in contracts if c.get("id") != contract_id]
+        if len(contracts) == original_len:
+            return False  # not found
+        index["contracts"] = contracts
+        self.write_json("contracts/index.json", index)
+
+        # Delete files (ignore missing)
+        for path in [
+            f"contracts/{contract_id}.md",
+            f"drafts/{contract_id}.md",
+            f"drafts/{contract_id}_discussion.json",
+        ]:
+            full = self._path(path)
+            try:
+                os.remove(full)
+            except FileNotFoundError:
+                pass
+
+        # Remove from summaries
+        summaries = self.get_summaries()
+        if contract_id in summaries:
+            del summaries[contract_id]
+            self.save_summaries(summaries)
+
+        # Remove from queue
+        queue = self.get_queue()
+        filtered_queue = [q for q in queue if q.get("id") != contract_id]
+        if len(filtered_queue) != len(queue):
+            self.save_queue(filtered_queue)
+
+        # Remove from reminders
+        reminders = self.get_reminders()
+        filtered_reminders = [r for r in reminders if r.get("contract_id") != contract_id]
+        if len(filtered_reminders) != len(reminders):
+            self.save_reminders(filtered_reminders)
+
+        # Remove from active threads
+        threads_data = self.read_json(self._ACTIVE_THREADS_FILE)
+        if isinstance(threads_data, dict):
+            threads = threads_data.get("threads", {})
+            if contract_id in threads:
+                del threads[contract_id]
+                self.write_json(self._ACTIVE_THREADS_FILE, threads_data)
+
+        self.audit_log("contract_deleted", contract_id=contract_id)
+        return True
+
     def get_contract_history(self, contract_id: str) -> list[dict]:
         """Return version history metadata for a contract."""
         history_path = f"contracts/versions/{contract_id}/history.jsonl"
