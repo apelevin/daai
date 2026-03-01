@@ -26,6 +26,7 @@ STATIC_DIR = Path(__file__).parent / "dashboard_static"
 
 _memory: Memory | None = None
 _planner = None  # ContinuousPlanner | None
+_planner_run: dict = {"running": False, "started_at": None, "finished_at": None, "result": None, "error": None}
 
 
 def _get_memory() -> Memory:
@@ -141,8 +142,32 @@ def create_app(memory: Memory | None = None, planner=None) -> FastAPI:
     def api_planner_run():
         if _planner is None:
             raise HTTPException(503, "Planner not available")
-        threading.Thread(target=_planner._run_cycle, daemon=True).start()
+        if _planner_run["running"]:
+            raise HTTPException(409, "Planner cycle already running")
+
+        def _wrapped_run():
+            _planner_run["running"] = True
+            _planner_run["started_at"] = datetime.now(timezone.utc).isoformat()
+            _planner_run["finished_at"] = None
+            _planner_run["result"] = None
+            _planner_run["error"] = None
+            try:
+                _planner._run_cycle()
+                _planner_run["result"] = "ok"
+            except Exception as e:
+                _planner_run["error"] = str(e)
+                _planner_run["result"] = "error"
+                logger.error("Force run planner failed: %s", e, exc_info=True)
+            finally:
+                _planner_run["finished_at"] = datetime.now(timezone.utc).isoformat()
+                _planner_run["running"] = False
+
+        threading.Thread(target=_wrapped_run, daemon=True).start()
         return {"status": "started"}
+
+    @app.get("/api/planner/run/status")
+    def api_planner_run_status():
+        return _planner_run
 
     # ── API: Scheduler ───────────────────────────────────────────────────
     @app.get("/api/scheduler")

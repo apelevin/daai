@@ -8,6 +8,7 @@ let autoRefreshTimer = null;
 document.addEventListener("DOMContentLoaded", () => {
     refreshAll();
     setupAutoRefresh();
+    checkPlannerRunStatus();
 });
 
 function setupAutoRefresh() {
@@ -256,25 +257,101 @@ async function fetchPlanner() {
     }
 }
 
+let plannerPollTimer = null;
+
 async function forceRunPlanner() {
     const btn = document.getElementById("force-run-btn");
+    const banner = document.getElementById("planner-run-status");
     btn.disabled = true;
-    btn.textContent = "Running...";
     try {
         const resp = await fetch(API + "/api/planner/run", { method: "POST" });
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
-            alert("Planner error: " + (err.detail || resp.statusText));
+            banner.className = "planner-run-banner banner-error";
+            banner.style.display = "block";
+            banner.textContent = "Error: " + (err.detail || resp.statusText);
+            btn.disabled = false;
             return;
         }
-        btn.textContent = "Started!";
-        setTimeout(() => { btn.textContent = "Force Run"; btn.disabled = false; }, 3000);
+        showPlannerRunning();
+        startPlannerPoll();
     } catch (e) {
         console.error("Force run failed:", e);
-        alert("Force run failed: " + e.message);
-        btn.textContent = "Force Run";
+        banner.className = "planner-run-banner banner-error";
+        banner.style.display = "block";
+        banner.textContent = "Failed to start: " + e.message;
         btn.disabled = false;
     }
+}
+
+function showPlannerRunning() {
+    const btn = document.getElementById("force-run-btn");
+    const banner = document.getElementById("planner-run-status");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Running...';
+    banner.className = "planner-run-banner banner-running";
+    banner.style.display = "block";
+    banner.innerHTML = '<span class="spinner"></span> Planner cycle is running... <span id="planner-elapsed"></span>';
+}
+
+function startPlannerPoll() {
+    stopPlannerPoll();
+    updatePlannerElapsed();
+    plannerPollTimer = setInterval(pollPlannerStatus, 2000);
+}
+
+function stopPlannerPoll() {
+    if (plannerPollTimer) {
+        clearInterval(plannerPollTimer);
+        plannerPollTimer = null;
+    }
+}
+
+function updatePlannerElapsed() {
+    const el = document.getElementById("planner-elapsed");
+    if (!el) return;
+    if (!window._plannerStartTime) window._plannerStartTime = Date.now();
+    const sec = Math.floor((Date.now() - window._plannerStartTime) / 1000);
+    el.textContent = "(" + sec + "s)";
+}
+
+async function pollPlannerStatus() {
+    updatePlannerElapsed();
+    try {
+        const data = await apiFetch("/api/planner/run/status");
+        if (data.running) return; // still running
+
+        stopPlannerPoll();
+        window._plannerStartTime = null;
+        const btn = document.getElementById("force-run-btn");
+        const banner = document.getElementById("planner-run-status");
+        btn.innerHTML = "Force Run";
+        btn.disabled = false;
+
+        if (data.result === "ok") {
+            banner.className = "planner-run-banner banner-success";
+            banner.textContent = "Cycle completed successfully at " + formatTs(data.finished_at);
+            fetchPlanner();
+            fetchActivity();
+        } else {
+            banner.className = "planner-run-banner banner-error";
+            banner.textContent = "Cycle failed: " + (data.error || "unknown error");
+        }
+        setTimeout(() => { banner.style.display = "none"; }, 15000);
+    } catch (e) {
+        console.error("Poll planner status failed:", e);
+    }
+}
+
+// Check on page load if planner is already running
+async function checkPlannerRunStatus() {
+    try {
+        const data = await apiFetch("/api/planner/run/status");
+        if (data.running) {
+            showPlannerRunning();
+            startPlannerPoll();
+        }
+    } catch (_) {}
 }
 
 // ── Scheduler ────────────────────────────────────────────────────────────────

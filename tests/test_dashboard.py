@@ -302,6 +302,44 @@ class TestPlannerRun:
         resp = client.post("/api/planner/run")
         assert resp.status_code == 503
 
+    def test_run_status_idle(self, memory):
+        """GET /api/planner/run/status returns idle state."""
+        app = create_app(memory)
+        client = TestClient(app)
+        resp = client.get("/api/planner/run/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["running"] is False
+
+    def test_run_status_after_completion(self, memory):
+        """After a successful run, status shows result=ok."""
+        import time
+        mock_planner = type("MockPlanner", (), {"_run_cycle": lambda self: None})()
+        app = create_app(memory, planner=mock_planner)
+        client = TestClient(app)
+        client.post("/api/planner/run")
+        time.sleep(0.1)  # let the thread finish
+        resp = client.get("/api/planner/run/status")
+        data = resp.json()
+        assert data["running"] is False
+        assert data["result"] == "ok"
+        assert data["finished_at"] is not None
+
+    def test_run_status_after_error(self, memory):
+        """After a failed run, status shows result=error."""
+        import time
+        def _fail(self): raise RuntimeError("test boom")
+        mock_planner = type("MockPlanner", (), {"_run_cycle": _fail})()
+        app = create_app(memory, planner=mock_planner)
+        client = TestClient(app)
+        client.post("/api/planner/run")
+        time.sleep(0.1)
+        resp = client.get("/api/planner/run/status")
+        data = resp.json()
+        assert data["running"] is False
+        assert data["result"] == "error"
+        assert "test boom" in data["error"]
+
 
 class TestIndexPage:
     def test_serves_html(self, client):
