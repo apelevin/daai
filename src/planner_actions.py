@@ -78,23 +78,30 @@ class ActionDispatcher:
         }
 
     def _ask_question(self, action: dict, initiative: dict) -> dict | None:
-        """Ask a specific question to a specific person in a thread."""
+        """Ask a specific question to one or more people in a thread."""
         contract_id = action.get("contract_id", "")
-        target_user = action.get("target_user", "")
         hint = action.get("message_hint", "")
         thread_id = initiative.get("thread_id")
 
-        if target_user and target_user.startswith("@"):
-            target_user = target_user[1:]
+        # Support both target_users (list) and target_user (string, backward compat)
+        target_users = action.get("target_users", [])
+        if not target_users:
+            single = action.get("target_user", "")
+            if single:
+                target_users = [single]
 
-        message = f"@{target_user}, {hint}" if target_user else hint
+        # Clean @ prefixes
+        target_users = [u.lstrip("@") for u in target_users]
+
+        mentions = " ".join(f"@{u}" for u in target_users)
+        message = f"{mentions}, {hint}" if mentions else hint
 
         resp = self.mm.send_to_channel(message, root_id=thread_id)
         return {
             "action": "ask_question",
             "at": datetime.now(timezone.utc).isoformat(),
             "post_id": resp.get("id", ""),
-            "target": target_user,
+            "targets": target_users,
             "contract_id": contract_id,
         }
 

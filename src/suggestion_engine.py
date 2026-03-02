@@ -100,6 +100,46 @@ def _resolve_stakeholders(metric_name: str, circles_md: str) -> list[str]:
     return matched
 
 
+def _resolve_stakeholders_from_profiles(metric_name: str, memory) -> list[str]:
+    """Match metric name against participant profiles → list of usernames.
+
+    Falls back to circles.md-based resolution if no profile matches found.
+    """
+    try:
+        participants = memory.list_participants(active_only=True)
+    except Exception:
+        participants = []
+
+    if not participants:
+        circles_md = memory.read_file("context/circles.md") or ""
+        return _resolve_stakeholders(metric_name, circles_md)
+
+    name_lower = metric_name.lower()
+    # Build keywords from metric name: the full name + individual words (3+ chars)
+    keywords = [name_lower]
+    keywords.extend(w.lower() for w in metric_name.split() if len(w) >= 3)
+
+    matched: list[str] = []
+    for username in participants:
+        profile = memory.get_participant(username) or ""
+        if not profile:
+            continue
+
+        profile_lower = profile.lower()
+        for kw in keywords:
+            if kw in profile_lower:
+                if username not in matched:
+                    matched.append(username)
+                break
+
+    if not matched:
+        # Fallback to circles.md
+        circles_md = memory.read_file("context/circles.md") or ""
+        return _resolve_stakeholders(metric_name, circles_md)
+
+    return matched
+
+
 def _slugify_metric(name: str) -> str:
     """Convert metric name to contract_id slug."""
     from src.router import _slugify
@@ -154,7 +194,6 @@ class SuggestionEngine:
             return []
 
         # Build candidates
-        circles_md = self.memory.read_file("context/circles.md") or ""
         queue = self.memory.get_queue()
         queue_map = {item["id"]: item.get("priority") for item in queue if isinstance(item, dict)}
 
@@ -168,7 +207,7 @@ class SuggestionEngine:
             seen_ids.add(cid)
 
             priority = queue_map.get(cid)
-            stakeholders = _resolve_stakeholders(tn.short_name, circles_md)
+            stakeholders = _resolve_stakeholders_from_profiles(tn.short_name, self.memory)
 
             candidates.append(SuggestionCandidate(
                 contract_id=cid,
@@ -214,7 +253,6 @@ class SuggestionEngine:
             if isinstance(c, dict) and c.get("status") in ("draft", "in_review", "approved", "active", "agreed"):
                 active_ids.add(str(c.get("id", "")).lower())
 
-        circles_md = self.memory.read_file("context/circles.md") or ""
         queue = self.memory.get_queue()
         queue_map = {item["id"]: item.get("priority") for item in queue if isinstance(item, dict)}
 
@@ -225,7 +263,7 @@ class SuggestionEngine:
                 continue
 
             priority = queue_map.get(cid)
-            stakeholders = _resolve_stakeholders(tn.short_name, circles_md)
+            stakeholders = _resolve_stakeholders_from_profiles(tn.short_name, self.memory)
 
             candidates.append(SuggestionCandidate(
                 contract_id=cid,

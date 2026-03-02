@@ -218,14 +218,18 @@ class ContinuousPlanner:
 
                     if action["type"] in ("ask_question", "follow_up"):
                         initiative["status"] = "waiting_response"
-                        target = action.get("target_user", "")
-                        if target and target.startswith("@"):
-                            target = target[1:]
-                        if target:
-                            waiting = initiative.get("waiting_for", [])
-                            if target not in waiting:
+                        # Support both target_users (list) and target_user (string)
+                        targets = action.get("target_users", [])
+                        if not targets:
+                            single = action.get("target_user", "")
+                            if single:
+                                targets = [single]
+                        waiting = initiative.get("waiting_for", [])
+                        for target in targets:
+                            target = target.lstrip("@")
+                            if target and target not in waiting:
                                 waiting.append(target)
-                            initiative["waiting_for"] = waiting
+                        initiative["waiting_for"] = waiting
                         initiative["next_action_after"] = (
                             now + timedelta(hours=PLANNER_WAIT_BEFORE_FOLLOWUP_HOURS)
                         ).isoformat()
@@ -420,6 +424,42 @@ class ContinuousPlanner:
 
         return rank_candidates(candidates)
 
+    def _get_stakeholder_context(self, stakeholders: list[str] | None) -> list[dict]:
+        """Build short context summaries for stakeholders from their profiles."""
+        if not stakeholders:
+            return []
+        result = []
+        for username in stakeholders:
+            try:
+                profile = self.memory.get_participant(username) or ""
+                if not profile:
+                    result.append({"username": username, "summary": "профиль не найден"})
+                    continue
+                # Extract key sections from profile
+                lines = profile.splitlines()
+                domain = ""
+                positions = ""
+                section = ""
+                for line in lines:
+                    if line.startswith("## "):
+                        section = line[3:].strip().lower()
+                    elif section in ("домен и данные", "экспертиза") and line.strip().startswith("- "):
+                        domain += line.strip() + " "
+                    elif section == "позиции по контрактам" and line.strip():
+                        positions += line.strip() + " "
+                summary_parts = []
+                if domain.strip():
+                    summary_parts.append(domain.strip()[:200])
+                if positions.strip():
+                    summary_parts.append(positions.strip()[:200])
+                result.append({
+                    "username": username,
+                    "summary": "; ".join(summary_parts) if summary_parts else "профиль без деталей",
+                })
+            except Exception:
+                result.append({"username": username, "summary": "ошибка чтения профиля"})
+        return result
+
     # ── 3. PLAN ──────────────────────────────────────────────────────
 
     def _plan(self, candidates: list[ScoredCandidate], gathered: dict, state: dict) -> list[dict]:
@@ -436,6 +476,7 @@ class ContinuousPlanner:
                 "type": c.candidate_type,
                 "score": c.score,
                 "stakeholders": c.stakeholders or [],
+                "stakeholder_context": self._get_stakeholder_context(c.stakeholders),
             })
 
         active_initiatives = [

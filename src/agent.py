@@ -50,6 +50,9 @@ class ProcessResult:
 # Route types that should be tracked to active threads
 THREAD_TRACKING_TYPES = {"contract_discussion", "new_contract_init", "problem_report"}
 
+# Route types where profile enrichment runs post-processing
+_ENRICHMENT_ROUTES = {"contract_discussion", "new_contract_init", "problem_report"}
+
 
 class Agent:
     def __init__(self, llm_client, memory, mattermost_client):
@@ -508,6 +511,37 @@ class Agent:
         reply = self._process_with_tools(username, message, channel_type, thread_context, route_data)
         return _result(reply)
 
+    def _enrich_participant_profile(
+        self, username: str, message: str, route_type: str, thread_context: str | None
+    ) -> None:
+        """Post-process: enrich participant profile from conversation signals."""
+        try:
+            if route_type not in _ENRICHMENT_ROUTES:
+                return
+
+            current_profile = self.memory.get_participant(username) or ""
+            if not current_profile:
+                return
+
+            enrichment_prompt = self.memory.read_file("prompts/profile_enrichment.md") or ""
+            if not enrichment_prompt:
+                return
+
+            user_msg = (
+                f"Текущий профиль:\n```\n{current_profile}\n```\n\n"
+                f"Сообщение участника:\n```\n{message}\n```\n\n"
+                f"Контекст треда:\n```\n{thread_context or '(нет контекста)'}\n```"
+            )
+
+            result = self.llm.call_cheap(enrichment_prompt, user_msg)
+            result = result.strip()
+
+            if result and result != current_profile.strip():
+                self.memory.update_participant(username, result)
+                logger.info("Enriched profile for %s", username)
+        except Exception as e:
+            logger.warning("Profile enrichment failed for %s: %s", username, e)
+
     def _process_with_tools(
         self,
         username: str,
@@ -580,12 +614,16 @@ class Agent:
 
         executor = ToolExecutor(self.memory, self.mm, self.llm)
 
-        return self.llm.call_with_tools(
+        reply = self.llm.call_with_tools(
             system_prompt=full_system,
             user_message=user_msg,
             tools=tools,
             tool_executor=executor.execute,
         )
+        self._enrich_participant_profile(
+            username, message, route_data.get("type", ""), thread_context
+        )
+        return reply
 
     def onboard_participant(self, user_id: str, username: str, display_name: str) -> None:
         """Create basic profile and send welcome DM."""
