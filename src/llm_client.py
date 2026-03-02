@@ -38,6 +38,7 @@ class LLMClient:
         base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
         self.cheap_model = os.environ.get("CHEAP_MODEL", "anthropic/claude-3.5-haiku")
         self.heavy_model = os.environ.get("HEAVY_MODEL", "anthropic/claude-sonnet-4")
+        self.fallback_model = os.environ.get("FALLBACK_MODEL", "google/gemini-3-flash-preview")
 
         self.client = openai.OpenAI(
             base_url=base_url,
@@ -45,7 +46,7 @@ class LLMClient:
             timeout=LLM_TIMEOUT_SECONDS,
         )
         self.log_costs = os.environ.get("LOG_LLM_COSTS", "true").lower() == "true"
-        logger.info("LLM client initialized: cheap=%s, heavy=%s, timeout=%ds", self.cheap_model, self.heavy_model, LLM_TIMEOUT_SECONDS)
+        logger.info("LLM client initialized: cheap=%s, heavy=%s, fallback=%s, timeout=%ds", self.cheap_model, self.heavy_model, self.fallback_model, LLM_TIMEOUT_SECONDS)
 
     def call_cheap(self, system_prompt: str, user_message: str) -> str:
         """Fast cheap call for routing and simple responses."""
@@ -138,7 +139,10 @@ class LLMClient:
             if not msg.tool_calls:
                 xml_calls = _parse_xml_tool_calls(msg.content or "")
                 if not xml_calls:
-                    return msg.content or ""
+                    reply = msg.content or ""
+                    if not reply.strip() and turn > 0:
+                        reply = self._generate_fallback_reply(messages)
+                    return reply
 
                 logger.info("Fallback: parsed %d XML tool call(s) from text", len(xml_calls))
                 clean_content = _strip_xml_invokes(msg.content or "")
@@ -189,12 +193,58 @@ class LLMClient:
                 })
 
         # Max turns exceeded — return whatever text we have
+        result = ""
         for m in reversed(messages):
             if hasattr(m, "content") and m.content:
-                return m.content
-            if isinstance(m, dict) and m.get("content") and m.get("role") != "tool":
-                return m["content"]
-        return ""
+                result = m.content
+                break
+            if isinstance(m, dict) and m.get("content") and m.get("role") == "assistant":
+                result = m["content"]
+                break
+        if not result.strip():
+            result = self._generate_fallback_reply(messages)
+        return result
+
+    def _generate_fallback_reply(self, messages: list) -> str:
+        """Generate a reply via fallback model when tool loop produced empty response."""
+        try:
+            # Extract user message
+            user_text = ""
+            for m in messages:
+                role = m.get("role") if isinstance(m, dict) else getattr(m, "role", None)
+                if role == "user":
+                    user_text = m.get("content") if isinstance(m, dict) else (m.content or "")
+                    break
+
+            # Collect tool results
+            tool_results = []
+            for m in messages:
+                if isinstance(m, dict) and m.get("role") == "tool":
+                    tool_results.append(m.get("content", ""))
+
+            context_parts = [f"Пользователь написал: {user_text}"]
+            if tool_results:
+                context_parts.append(f"Были выполнены операции: {tool_results}")
+
+            fallback_system = (
+                "Ты AI-архитектор Data Contracts. Ты выполнил операции с инструментами, "
+                "но забыл ответить пользователю. Напиши краткий ответ на русском: "
+                "что было сделано, что зафиксировано, какие открытые вопросы, какие следующие шаги."
+            )
+
+            reply = self._call(
+                model=self.fallback_model,
+                system_prompt=fallback_system,
+                user_message="\n".join(context_parts),
+                max_tokens=800,
+                temperature=0.3,
+                label="fallback",
+            )
+            logger.info("LLM [fallback] generated reply via %s", self.fallback_model)
+            return reply
+        except Exception:
+            logger.exception("LLM [fallback] failed to generate reply")
+            return ""
 
     def _call(
         self,

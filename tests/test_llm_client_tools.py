@@ -241,5 +241,97 @@ class CallWithToolsTest(unittest.TestCase):
         self.assertIn("сохранён", result)
 
 
+    def test_empty_reply_after_tool_calls_triggers_fallback(self):
+        """LLM calls a tool, then returns empty content — fallback model generates reply."""
+        client = self._make_client()
+
+        # Turn 0: tool call
+        tc = FakeToolCall("tc_1", "save_draft", {"contract_id": "test"})
+        msg1 = FakeMessage(content=None, tool_calls=[tc])
+
+        # Turn 1: empty reply (the bug scenario)
+        msg2 = FakeMessage(content="", tool_calls=None)
+
+        # Fallback _call will be invoked
+        fallback_reply = "Черновик test сохранён. Следующий шаг — согласование."
+
+        create_mock = MagicMock(side_effect=[FakeResponse(msg1), FakeResponse(msg2)])
+        client.client.chat.completions.create = create_mock
+
+        with patch.object(client, '_call', return_value=fallback_reply) as mock_call:
+            result = client.call_with_tools(
+                system_prompt="system",
+                user_message="сохрани черновик test",
+                tools=[{"type": "function", "function": {"name": "save_draft"}}],
+                tool_executor=lambda n, a: {"success": True},
+            )
+
+        self.assertEqual(result, fallback_reply)
+        mock_call.assert_called_once()
+        # Verify fallback was called with the fallback model and label
+        self.assertIn("fallback", str(mock_call.call_args))
+
+    def test_empty_reply_on_turn_0_no_fallback(self):
+        """Empty reply on turn 0 (no tools were called) — no fallback, return empty."""
+        client = self._make_client()
+
+        msg = FakeMessage(content="", tool_calls=None)
+        client.client.chat.completions.create = MagicMock(return_value=FakeResponse(msg))
+
+        with patch.object(client, '_generate_fallback_reply') as mock_fb:
+            result = client.call_with_tools(
+                system_prompt="system",
+                user_message="привет",
+                tools=[],
+                tool_executor=lambda n, a: {},
+            )
+
+        self.assertEqual(result, "")
+        mock_fb.assert_not_called()
+
+    def test_max_turns_exceeded_empty_triggers_fallback(self):
+        """All turns used by tool calls, no text — fallback generates reply."""
+        client = self._make_client()
+
+        tc = FakeToolCall("tc_1", "read_draft", {"contract_id": "x"})
+        msg_with_tool = FakeMessage(content=None, tool_calls=[tc])
+
+        client.client.chat.completions.create = MagicMock(
+            return_value=FakeResponse(msg_with_tool)
+        )
+
+        fallback_reply = "Были выполнены операции с черновиком x."
+
+        with patch.object(client, '_generate_fallback_reply', return_value=fallback_reply) as mock_fb:
+            result = client.call_with_tools(
+                system_prompt="s", user_message="u", tools=[],
+                tool_executor=lambda n, a: {"ok": True},
+                max_turns=2,
+            )
+
+        self.assertEqual(result, fallback_reply)
+        mock_fb.assert_called_once()
+
+    def test_fallback_exception_returns_empty(self):
+        """If fallback model fails, return empty string — don't crash."""
+        client = self._make_client()
+
+        tc = FakeToolCall("tc_1", "save_draft", {"contract_id": "t"})
+        msg1 = FakeMessage(content=None, tool_calls=[tc])
+        msg2 = FakeMessage(content="  ", tool_calls=None)  # whitespace-only
+
+        client.client.chat.completions.create = MagicMock(
+            side_effect=[FakeResponse(msg1), FakeResponse(msg2)]
+        )
+
+        with patch.object(client, '_call', side_effect=Exception("API down")):
+            result = client.call_with_tools(
+                system_prompt="s", user_message="u", tools=[],
+                tool_executor=lambda n, a: {"ok": True},
+            )
+
+        self.assertEqual(result, "")
+
+
 if __name__ == "__main__":
     unittest.main()
