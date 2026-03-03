@@ -170,10 +170,9 @@ class TestResolveStakeholdersFromProfiles:
         result = _resolve_stakeholders_from_profiles("Churn Rate", memory)
         assert "olga_cs" in result
 
-    def test_no_match_falls_back_to_circles(self, memory):
-        """If no profile matches, fall back to circles.md resolution."""
+    def test_no_match_returns_empty(self, memory):
+        """If no profile matches, return empty list."""
         result = _resolve_stakeholders_from_profiles("Unknown Metric XYZ", memory)
-        # circles.md doesn't match either, so empty
         assert result == []
 
     def test_multiple_matches(self, memory):
@@ -187,14 +186,13 @@ class TestResolveStakeholdersFromProfiles:
         result = _resolve_stakeholders_from_profiles("WIN NI", memory)
         assert "empty_user" not in result
 
-    def test_fallback_when_no_participants(self, memory, data_dir):
-        """Falls back to circles.md when no participants in index."""
+    def test_no_participants_returns_empty(self, memory, data_dir):
+        """Returns empty list when no participants in index."""
         (data_dir / "participants" / "index.json").write_text(
             '{"participants": []}', encoding="utf-8"
         )
         result = _resolve_stakeholders_from_profiles("WIN NI", memory)
-        # Should use circles.md fallback
-        assert "fallback_sales" in result
+        assert result == []
 
     def test_case_insensitive_matching(self, memory):
         """Matching is case-insensitive."""

@@ -103,7 +103,9 @@ def _resolve_stakeholders(metric_name: str, circles_md: str) -> list[str]:
 def _resolve_stakeholders_from_profiles(metric_name: str, memory) -> list[str]:
     """Match metric name against participant profiles → list of usernames.
 
-    Falls back to circles.md-based resolution if no profile matches found.
+    Only matches the full metric name (not individual short words) to avoid
+    false positives like "income" matching "Recurring Income" for "New Income".
+    Returns empty list if no profile matches found.
     """
     try:
         participants = memory.list_participants(active_only=True)
@@ -111,13 +113,9 @@ def _resolve_stakeholders_from_profiles(metric_name: str, memory) -> list[str]:
         participants = []
 
     if not participants:
-        circles_md = memory.read_file("context/circles.md") or ""
-        return _resolve_stakeholders(metric_name, circles_md)
+        return []
 
     name_lower = metric_name.lower()
-    # Build keywords from metric name: the full name + individual words (3+ chars)
-    keywords = [name_lower]
-    keywords.extend(w.lower() for w in metric_name.split() if len(w) >= 3)
 
     matched: list[str] = []
     for username in participants:
@@ -125,17 +123,9 @@ def _resolve_stakeholders_from_profiles(metric_name: str, memory) -> list[str]:
         if not profile:
             continue
 
-        profile_lower = profile.lower()
-        for kw in keywords:
-            if kw in profile_lower:
-                if username not in matched:
-                    matched.append(username)
-                break
-
-    if not matched:
-        # Fallback to circles.md
-        circles_md = memory.read_file("context/circles.md") or ""
-        return _resolve_stakeholders(metric_name, circles_md)
+        if name_lower in profile.lower():
+            if username not in matched:
+                matched.append(username)
 
     return matched
 
