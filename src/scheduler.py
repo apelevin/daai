@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 import threading
 from datetime import datetime, timezone, timedelta
 
 import schedule
 
-from src.config import REMINDER_STEP_DAYS, REMINDER_DEFAULT_INTERVAL_DAYS
+from src.config import (
+    REMINDER_STEP_DAYS,
+    REMINDER_DEFAULT_INTERVAL_DAYS,
+    OPEN_QUESTIONS_DIGEST_TIME,
+    OPEN_QUESTIONS_DIGEST_WORKDAYS,
+    MATTERMOST_TEAM_NAME,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +35,12 @@ class Scheduler:
         schedule.every().friday.at("17:00").do(self._weekly_digest)
         schedule.every().tuesday.at("10:00").do(self._coverage_scan)
         schedule.every().day.at("03:00").do(self._cleanup_threads)
+        schedule.every().day.at(OPEN_QUESTIONS_DIGEST_TIME).do(self._open_questions_digest)
 
-        logger.info("Scheduler started: reminders every %dh, digest Fri 17:00, coverage Tue 10:00, cleanup 03:00", self.reminder_hours)
+        logger.info(
+            "Scheduler started: reminders every %dh, digest Fri 17:00, coverage Tue 10:00, cleanup 03:00, open-questions %s",
+            self.reminder_hours, OPEN_QUESTIONS_DIGEST_TIME,
+        )
 
         while True:
             schedule.run_pending()
@@ -276,6 +287,135 @@ class Scheduler:
 
         except Exception as e:
             logger.error("Error in weekly_digest: %s", e, exc_info=True)
+
+    def _open_questions_digest(self):
+        """Post a daily digest of contracts with open questions."""
+        try:
+            # Workday guard
+            today = datetime.now(timezone.utc).weekday()
+            if today not in OPEN_QUESTIONS_DIGEST_WORKDAYS:
+                logger.debug("Open questions digest: skipped (not a workday)")
+                return
+
+            contracts = self.memory.list_contracts()
+            active_threads = self.memory.get_all_active_threads()
+            mm_url = os.environ.get("MATTERMOST_URL", "")
+
+            items: list[dict] = []
+            for contract in contracts:
+                contract_id = contract.get("id", "")
+                status = contract.get("status", "")
+
+                # Skip agreed/approved contracts without blocker
+                discussion = self.memory.get_discussion(contract_id)
+                if not discussion:
+                    continue
+
+                blocker = discussion.get("blocker", "")
+                has_open = False
+                waiting_on: set[str] = set()
+
+                # Check blocker
+                if blocker:
+                    has_open = True
+                    waiting_on |= _extract_mentions(blocker)
+
+                # Check top-level open_questions
+                open_questions = discussion.get("open_questions", [])
+                if isinstance(open_questions, list) and open_questions:
+                    has_open = True
+                    for q in open_questions:
+                        if isinstance(q, str):
+                            waiting_on |= _extract_mentions(q)
+                        elif isinstance(q, dict):
+                            waiting_on |= _extract_mentions(q.get("text", ""))
+                            waiting_on |= _extract_mentions(q.get("assigned_to", ""))
+
+                # Check positions for per-user open_questions
+                positions = discussion.get("positions", {})
+                if isinstance(positions, dict):
+                    for username, pos in positions.items():
+                        if not isinstance(pos, dict):
+                            continue
+                        user_oq = pos.get("open_questions", [])
+                        if isinstance(user_oq, list) and user_oq:
+                            has_open = True
+                            waiting_on.add(username)
+                            for q in user_oq:
+                                if isinstance(q, str):
+                                    waiting_on |= _extract_mentions(q)
+
+                # Check next_action
+                next_action = discussion.get("next_action", "")
+                if next_action:
+                    action_mentions = _extract_mentions(next_action)
+                    if action_mentions:
+                        has_open = True
+                        waiting_on |= action_mentions
+
+                # Skip if agreed/approved and no open issues
+                if status in ("agreed", "approved") and not has_open:
+                    continue
+
+                if not has_open:
+                    continue
+
+                # Build thread URL
+                url = None
+                root_post_id = active_threads.get(contract_id)
+                if root_post_id and mm_url and MATTERMOST_TEAM_NAME:
+                    url = f"{mm_url.rstrip('/')}/{MATTERMOST_TEAM_NAME}/pl/{root_post_id}"
+
+                name = contract.get("name", contract_id)
+                items.append({
+                    "name": name,
+                    "url": url,
+                    "waiting_on": waiting_on,
+                    "blocker": blocker if blocker else None,
+                })
+
+            if not items:
+                logger.debug("Open questions digest: no items")
+                return
+
+            message = _format_open_questions_digest(items)
+            self.mm.send_to_channel(message)
+            logger.info("Open questions digest: posted %d items", len(items))
+
+        except Exception as e:
+            logger.error("Error in open_questions_digest: %s", e, exc_info=True)
+
+
+def _extract_mentions(text: str) -> set[str]:
+    """Extract @mentions from text."""
+    if not text:
+        return set()
+    return set(re.findall(r"@([a-zA-Z0-9_.]+)", text))
+
+
+def _format_open_questions_digest(items: list[dict]) -> str:
+    """Format digest message from list of items.
+
+    Each item: {name, url, waiting_on, blocker}
+    """
+    lines = ["### :clipboard: Дайджест открытых вопросов", ""]
+    for item in items:
+        name = item["name"]
+        url = item.get("url")
+        if url:
+            lines.append(f"- **[{name}]({url})**")
+        else:
+            lines.append(f"- **{name}**")
+        waiting = item.get("waiting_on")
+        if waiting:
+            mentions = ", ".join(f"@{u}" for u in sorted(waiting))
+            lines.append(f"  Ожидаем: {mentions}")
+        blocker = item.get("blocker")
+        if blocker:
+            lines.append(f"  Блокер: {blocker}")
+        lines.append("")
+    lines.append(f"_Всего контрактов с открытыми вопросами: {len(items)}_")
+    return "\n".join(lines)
 
 
 def _format_json(data) -> str:

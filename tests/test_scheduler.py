@@ -2,12 +2,12 @@
 
 import json
 from datetime import datetime, timezone, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.memory import Memory
-from src.scheduler import Scheduler
+from src.scheduler import Scheduler, _extract_mentions, _format_open_questions_digest
 
 
 @pytest.fixture
@@ -238,3 +238,212 @@ class TestThreadCleanup:
 
         data = memory.read_json("tasks/active_threads.json")
         assert len(data["threads"]) == 2
+
+
+class TestExtractMentions:
+    def test_basic_mentions(self):
+        assert _extract_mentions("@alice и @bob должны ответить") == {"alice", "bob"}
+
+    def test_no_mentions(self):
+        assert _extract_mentions("просто текст без упоминаний") == set()
+
+    def test_empty_string(self):
+        assert _extract_mentions("") == set()
+
+    def test_none(self):
+        assert _extract_mentions(None) == set()
+
+    def test_mentions_with_dots_underscores(self):
+        assert _extract_mentions("@user.name @another_user") == {"user.name", "another_user"}
+
+    def test_duplicate_mentions(self):
+        assert _extract_mentions("@alice @bob @alice") == {"alice", "bob"}
+
+
+class TestFormatOpenQuestionsDigest:
+    def test_basic_format(self):
+        items = [{
+            "name": "Contract A",
+            "url": "https://mm.example.com/team/pl/post123",
+            "waiting_on": {"alice", "bob"},
+            "blocker": "Нет данных по SLA",
+        }]
+        msg = _format_open_questions_digest(items)
+        assert "Дайджест открытых вопросов" in msg
+        assert "[Contract A]" in msg
+        assert "https://mm.example.com/team/pl/post123" in msg
+        assert "@alice" in msg
+        assert "@bob" in msg
+        assert "Нет данных по SLA" in msg
+        assert "Всего контрактов с открытыми вопросами: 1" in msg
+
+    def test_no_url(self):
+        items = [{"name": "Contract B", "url": None, "waiting_on": set(), "blocker": None}]
+        msg = _format_open_questions_digest(items)
+        assert "**Contract B**" in msg
+        assert "[" not in msg.split("Contract B")[0].split("\n")[-1]
+
+    def test_multiple_items(self):
+        items = [
+            {"name": "C1", "url": None, "waiting_on": {"alice"}, "blocker": None},
+            {"name": "C2", "url": None, "waiting_on": {"bob"}, "blocker": "blocked"},
+        ]
+        msg = _format_open_questions_digest(items)
+        assert "Всего контрактов с открытыми вопросами: 2" in msg
+
+
+class TestOpenQuestionsDigest:
+    def _setup_contract_with_discussion(self, memory, contract_id="c1", name="Test Contract",
+                                         status="draft", discussion=None, thread_id=None):
+        """Helper to set up a contract with discussion state."""
+        # Add contract to index
+        index = memory.read_json("contracts/index.json") or {"contracts": []}
+        index["contracts"].append({"id": contract_id, "name": name, "status": status})
+        memory.write_json("contracts/index.json", index)
+
+        # Save discussion
+        if discussion:
+            memory.update_discussion(contract_id, discussion)
+
+        # Set active thread
+        if thread_id:
+            memory.set_active_thread(contract_id, thread_id)
+
+    def test_contract_with_blocker_sends_digest(self, scheduler, memory, mm):
+        """Contract with blocker appears in digest with @mention."""
+        self._setup_contract_with_discussion(
+            memory, contract_id="c1", name="SLA Contract",
+            discussion={"blocker": "Ждём ответ от @alice по SLA"},
+            thread_id="post_abc",
+        )
+
+        with patch.dict("os.environ", {"MATTERMOST_URL": "https://mm.example.com", "MATTERMOST_TEAM_NAME": "myteam"}), \
+             patch("src.scheduler.MATTERMOST_TEAM_NAME", "myteam"), \
+             patch("src.scheduler.OPEN_QUESTIONS_DIGEST_WORKDAYS", list(range(7))):
+            scheduler._open_questions_digest()
+
+        mm.send_to_channel.assert_called_once()
+        msg = mm.send_to_channel.call_args[0][0]
+        assert "@alice" in msg
+        assert "SLA Contract" in msg
+        assert "Ждём ответ от @alice по SLA" in msg
+
+    def test_agreed_without_blocker_skipped(self, scheduler, memory, mm):
+        """Agreed contract without blocker/open questions is skipped."""
+        self._setup_contract_with_discussion(
+            memory, contract_id="c1", name="Done Contract", status="agreed",
+            discussion={"blocker": "", "open_questions": [], "positions": {}},
+        )
+
+        with patch("src.scheduler.OPEN_QUESTIONS_DIGEST_WORKDAYS", list(range(7))):
+            scheduler._open_questions_digest()
+
+        mm.send_to_channel.assert_not_called()
+
+    def test_no_open_questions_nothing_sent(self, scheduler, memory, mm):
+        """No contracts with open questions → nothing sent."""
+        with patch("src.scheduler.OPEN_QUESTIONS_DIGEST_WORKDAYS", list(range(7))):
+            scheduler._open_questions_digest()
+
+        mm.send_to_channel.assert_not_called()
+
+    def test_open_questions_with_mentions(self, scheduler, memory, mm):
+        """Open questions with @mentions are collected."""
+        self._setup_contract_with_discussion(
+            memory, contract_id="c1", name="Metrics Contract",
+            discussion={
+                "blocker": "",
+                "open_questions": [
+                    "Как считать retention? @bob должен уточнить",
+                    "@carol — нужны данные",
+                ],
+                "positions": {},
+            },
+        )
+
+        with patch("src.scheduler.OPEN_QUESTIONS_DIGEST_WORKDAYS", list(range(7))):
+            scheduler._open_questions_digest()
+
+        mm.send_to_channel.assert_called_once()
+        msg = mm.send_to_channel.call_args[0][0]
+        assert "@bob" in msg
+        assert "@carol" in msg
+
+    def test_active_thread_url_in_message(self, scheduler, memory, mm):
+        """Active thread + TEAM_NAME → URL in message."""
+        self._setup_contract_with_discussion(
+            memory, contract_id="c1", name="URL Contract",
+            discussion={"blocker": "blocked by @dave"},
+            thread_id="post_xyz",
+        )
+
+        with patch.dict("os.environ", {"MATTERMOST_URL": "https://mm.test.com"}), \
+             patch("src.scheduler.MATTERMOST_TEAM_NAME", "testteam"), \
+             patch("src.scheduler.OPEN_QUESTIONS_DIGEST_WORKDAYS", list(range(7))):
+            scheduler._open_questions_digest()
+
+        mm.send_to_channel.assert_called_once()
+        msg = mm.send_to_channel.call_args[0][0]
+        assert "https://mm.test.com/testteam/pl/post_xyz" in msg
+
+    def test_weekend_skipped(self, scheduler, memory, mm):
+        """Digest is not sent on non-workdays."""
+        self._setup_contract_with_discussion(
+            memory, contract_id="c1", name="Weekend Contract",
+            discussion={"blocker": "blocked"},
+        )
+
+        # Set workdays to empty → always skip
+        with patch("src.scheduler.OPEN_QUESTIONS_DIGEST_WORKDAYS", []):
+            scheduler._open_questions_digest()
+
+        mm.send_to_channel.assert_not_called()
+
+    def test_positions_open_questions(self, scheduler, memory, mm):
+        """Open questions inside positions are picked up."""
+        self._setup_contract_with_discussion(
+            memory, contract_id="c1", name="Positions Contract",
+            discussion={
+                "blocker": "",
+                "open_questions": [],
+                "positions": {
+                    "alice": {"open_questions": ["Нужно уточнить формат"]},
+                    "bob": {"open_questions": []},
+                },
+            },
+        )
+
+        with patch("src.scheduler.OPEN_QUESTIONS_DIGEST_WORKDAYS", list(range(7))):
+            scheduler._open_questions_digest()
+
+        mm.send_to_channel.assert_called_once()
+        msg = mm.send_to_channel.call_args[0][0]
+        assert "@alice" in msg
+
+    def test_next_action_with_mentions(self, scheduler, memory, mm):
+        """next_action with @mentions triggers digest."""
+        self._setup_contract_with_discussion(
+            memory, contract_id="c1", name="Action Contract",
+            discussion={
+                "blocker": "",
+                "open_questions": [],
+                "positions": {},
+                "next_action": "@eve должна подтвердить SLA",
+            },
+        )
+
+        with patch("src.scheduler.OPEN_QUESTIONS_DIGEST_WORKDAYS", list(range(7))):
+            scheduler._open_questions_digest()
+
+        mm.send_to_channel.assert_called_once()
+        msg = mm.send_to_channel.call_args[0][0]
+        assert "@eve" in msg
+
+    def test_digest_handles_error(self, scheduler, memory, mm):
+        """Digest doesn't crash on errors."""
+        memory.list_contracts = MagicMock(side_effect=Exception("db error"))
+
+        with patch("src.scheduler.OPEN_QUESTIONS_DIGEST_WORKDAYS", list(range(7))):
+            scheduler._open_questions_digest()  # Should not raise
+
+        mm.send_to_channel.assert_not_called()

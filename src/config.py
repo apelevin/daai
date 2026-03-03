@@ -34,6 +34,11 @@ WRITE_BACKOFF_BASE = _float("WRITE_BACKOFF_BASE", 0.5)
 REMINDER_STEP_DAYS = {1: 2, 2: 4, 3: 6, 4: 8}
 REMINDER_DEFAULT_INTERVAL_DAYS = _int("REMINDER_DEFAULT_INTERVAL_DAYS", 2)
 
+# ── Open questions digest ───────────────────────────────────────────────────
+OPEN_QUESTIONS_DIGEST_TIME = os.environ.get("OPEN_QUESTIONS_DIGEST_TIME", "10:00")
+OPEN_QUESTIONS_DIGEST_WORKDAYS = [int(d) for d in os.environ.get("OPEN_QUESTIONS_DIGEST_WORKDAYS", "0,1,2,3,4").split(",")]
+MATTERMOST_TEAM_NAME = os.environ.get("MATTERMOST_TEAM_NAME", "")
+
 # ── Governance ───────────────────────────────────────────────────────────────
 GOVERNANCE_REVIEW_THRESHOLD_DAYS = _int("GOVERNANCE_REVIEW_THRESHOLD_DAYS", 180)
 

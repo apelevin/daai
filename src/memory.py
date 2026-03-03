@@ -486,6 +486,32 @@ class Memory:
                 pass
         return entry.get("root_post_id") or None
 
+    def get_all_active_threads(self) -> dict[str, str]:
+        """Return {contract_id: root_post_id} for all non-expired threads."""
+        data = self.read_json(self._ACTIVE_THREADS_FILE)
+        if not isinstance(data, dict):
+            return {}
+        threads = data.get("threads")
+        if not isinstance(threads, dict):
+            return {}
+        now = datetime.now(timezone.utc)
+        result: dict[str, str] = {}
+        for contract_id, entry in threads.items():
+            if not isinstance(entry, dict):
+                continue
+            updated_at = entry.get("updated_at")
+            if updated_at:
+                try:
+                    dt = datetime.fromisoformat(updated_at)
+                    if now - dt > timedelta(days=THREAD_TTL_DAYS):
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            root_post_id = entry.get("root_post_id")
+            if root_post_id:
+                result[contract_id] = root_post_id
+        return result
+
     def set_active_thread(self, contract_id: str, root_post_id: str) -> None:
         """Register or update the active thread for a contract."""
         data = self.read_json(self._ACTIVE_THREADS_FILE)
