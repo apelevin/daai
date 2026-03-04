@@ -70,10 +70,11 @@ class ToolExecutor:
         llm_client: LLMClient for relationship detection (optional)
     """
 
-    def __init__(self, memory, mattermost_client=None, llm_client=None):
+    def __init__(self, memory, mattermost_client=None, llm_client=None, thread_root_id: str | None = None):
         self.memory = memory
         self.mm = mattermost_client
         self.llm = llm_client
+        self.thread_root_id = thread_root_id
 
     def execute(self, tool_name: str, args: dict) -> dict:
         """Dispatch tool call to handler. Returns JSON-serializable result."""
@@ -627,7 +628,7 @@ class ToolExecutor:
         if mentions:
             lines.append(f"{mentions} — ваше мнение важно")
 
-        self.mm.send_to_channel("\n".join(lines))
+        self.mm.send_to_channel("\n".join(lines), root_id=self.thread_root_id)
         return {"success": True, "mentions": mentions}
 
     def _resolve_mentions(self, target_roles: list = None) -> str:

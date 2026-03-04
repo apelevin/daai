@@ -508,7 +508,8 @@ class Agent:
             return _result("\n".join(lines))
 
         # ── Tool-use path ────────────────────────────────────────────────
-        reply = self._process_with_tools(username, message, channel_type, thread_context, route_data)
+        current_thread_root = root_id or resolved_thread_root or post_id
+        reply = self._process_with_tools(username, message, channel_type, thread_context, route_data, current_thread_root)
         return _result(reply)
 
     def _enrich_participant_profile(
@@ -549,6 +550,7 @@ class Agent:
         channel_type: str,
         thread_context: str | None,
         route_data: dict,
+        thread_root_id: str | None = None,
     ) -> str:
         """Process message using tool-use / function-calling path."""
         # Route-specific system prompt: full prompt only for heavy contract operations
@@ -612,7 +614,7 @@ class Agent:
         # Determine available tools based on route type
         tools = get_tools_for_route(route_data.get("type", ""), channel_type != "dm")
 
-        executor = ToolExecutor(self.memory, self.mm, self.llm)
+        executor = ToolExecutor(self.memory, self.mm, self.llm, thread_root_id=thread_root_id)
 
         reply = self.llm.call_with_tools(
             system_prompt=full_system,
