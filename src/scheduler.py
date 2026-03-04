@@ -306,12 +306,20 @@ class Scheduler:
                 contract_id = contract.get("id", "")
                 status = contract.get("status", "")
 
-                # Skip agreed/approved contracts without blocker
+                # Skip contracts without discussion
                 discussion = self.memory.get_discussion(contract_id)
                 if not discussion:
                     continue
 
+                # Skip discussions marked as resolved/agreed
+                disc_status = (discussion.get("status") or "").lower()
+                if disc_status in ("resolved", "agreed", "consensus", "closed"):
+                    continue
+
                 blocker = discussion.get("blocker", "")
+                # Treat "none", "нет", empty as no blocker
+                if blocker and blocker.strip().lower() in ("none", "нет", "no", ""):
+                    blocker = ""
                 has_open = False
                 waiting_on: set[str] = set()
 
@@ -347,7 +355,7 @@ class Scheduler:
 
                 # Check next_action
                 next_action = discussion.get("next_action", "")
-                if next_action:
+                if next_action and next_action.strip().lower() not in ("none", "нет", "no", ""):
                     action_mentions = _extract_mentions(next_action)
                     if action_mentions:
                         has_open = True
