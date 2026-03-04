@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,16 @@ class ActionDispatcher:
         self.memory = memory
         self.mm = mattermost_client
         self.llm = llm_client
+
+    def _thread_url(self, thread_id: str | None) -> str | None:
+        """Build a permalink to a Mattermost thread, or None."""
+        if not thread_id:
+            return None
+        mm_url = os.environ.get("MATTERMOST_URL", "")
+        team = os.environ.get("MATTERMOST_TEAM_NAME", "")
+        if mm_url and team:
+            return f"{mm_url.rstrip('/')}/{team}/pl/{thread_id}"
+        return None
 
     def execute(self, action: dict, initiative: dict) -> dict | None:
         """Execute an action and return result metadata, or None on failure.
@@ -95,6 +106,11 @@ class ActionDispatcher:
 
         mentions = " ".join(f"@{u}" for u in target_users)
         message = f"{mentions}, {hint}" if mentions else hint
+
+        # Add thread link
+        url = self._thread_url(thread_id)
+        if url:
+            message += f"\n\n:point_right: [Перейти в тред]({url})"
 
         resp = self.mm.send_to_channel(message, root_id=thread_id)
         return {
@@ -320,6 +336,11 @@ class ActionDispatcher:
         message = hint or f"Напоминаю об обсуждении контракта `{contract_id}`."
         if mentions:
             message = f"{mentions}, {message}"
+
+        # Add thread link when sending to channel (not as reply in thread)
+        url = self._thread_url(thread_id)
+        if url:
+            message += f"\n\n:point_right: [Перейти в тред]({url})"
 
         resp = self.mm.send_to_channel(message, root_id=thread_id)
         return {
