@@ -106,7 +106,81 @@ class ActionDispatcher:
         }
 
     def _propose_resolution(self, action: dict, initiative: dict) -> dict | None:
-        """Propose a resolution to a conflict in the thread."""
+        """Generate 2-3 resolution options via LLM and post for stakeholder voting."""
+        contract_id = action.get("contract_id", "")
+        hint = action.get("message_hint", "")
+        thread_id = initiative.get("thread_id")
+
+        try:
+            options = self._generate_resolution_options(contract_id, hint)
+        except Exception as e:
+            logger.warning("LLM resolution generation failed for %s: %s", contract_id, e)
+            options = None
+
+        if not options:
+            return self._propose_resolution_simple(action, initiative)
+
+        # Format message with numbered options
+        problem = options.get("problem_summary", hint)
+        opts = options.get("options", [])
+
+        number_emojis = ["1️⃣", "2️⃣", "3️⃣"]
+        message_parts = [
+            f":scales: **Разрешение конфликта** (`{contract_id}`)\n",
+            f"**Проблема:** {problem}\n",
+            "---\n",
+        ]
+
+        for i, opt in enumerate(opts[:3]):
+            emoji = number_emojis[i]
+            title = opt.get("title", f"Вариант {i + 1}")
+            desc = opt.get("description", "")
+            changes = opt.get("changes", "")
+            pros = opt.get("pros", "")
+            cons = opt.get("cons", "")
+
+            message_parts.append(f"{emoji} **{title}**")
+            if desc:
+                message_parts.append(f"  {desc}")
+            if changes:
+                message_parts.append(f"  Изменения: {changes}")
+            if pros:
+                message_parts.append(f"  ✅ {pros}")
+            if cons:
+                message_parts.append(f"  ⚠️ {cons}")
+            et_impact = opt.get("extra_time_impact")
+            if et_impact:
+                message_parts.append(f"  📊 Extra Time: {et_impact}")
+            message_parts.append("")
+
+        # Mention stakeholders
+        stakeholders = initiative.get("stakeholders", [])
+        mentions = " ".join(f"@{s}" for s in stakeholders) if stakeholders else ""
+        message_parts.append("---\n")
+        if mentions:
+            message_parts.append(
+                f"{mentions} — какой вариант предпочитаете? Напишите номер или предложите свой."
+            )
+        else:
+            message_parts.append("Какой вариант предпочитаете? Напишите номер или предложите свой.")
+
+        message = "\n".join(message_parts)
+
+        resp = self.mm.send_to_channel(message, root_id=thread_id)
+
+        # Save resolution options in discussion
+        self._save_resolution_options(contract_id, opts, stakeholders)
+
+        return {
+            "action": "propose_resolution",
+            "at": datetime.now(timezone.utc).isoformat(),
+            "post_id": resp.get("id", ""),
+            "contract_id": contract_id,
+            "options_count": len(opts),
+        }
+
+    def _propose_resolution_simple(self, action: dict, initiative: dict) -> dict | None:
+        """Fallback: simple resolution proposal without LLM-generated options."""
         contract_id = action.get("contract_id", "")
         hint = action.get("message_hint", "")
         thread_id = initiative.get("thread_id")
@@ -124,6 +198,93 @@ class ActionDispatcher:
             "post_id": resp.get("id", ""),
             "contract_id": contract_id,
         }
+
+    def _generate_resolution_options(self, contract_id: str, hint: str) -> dict | None:
+        """Call LLM to generate 2-3 resolution options based on contract contents."""
+        from src.analyzer import MetricsAnalyzer
+        from src.contract_summary import _extract_sections
+
+        # Detect conflicts for this contract
+        analyzer = MetricsAnalyzer(self.memory)
+        conflicts = analyzer.detect_conflicts(only_contract_ids=[contract_id])
+        if not conflicts:
+            return None
+
+        # Load involved contract contents
+        involved_ids: set[str] = set()
+        for c in conflicts:
+            involved_ids.update(c.contracts)
+
+        contract_snippets = {}
+        for cid in involved_ids:
+            md = self.memory.get_contract(cid) or self.memory.get_draft(cid) or ""
+            if md:
+                sections = _extract_sections(md)
+                contract_snippets[cid] = {
+                    "formula": sections.get("Формула", "")[:300],
+                    "definition": sections.get("Определение", "")[:300],
+                    "data_source": sections.get("Источник данных", "")[:200],
+                    "extra_time": sections.get("Связь с Extra Time", "")[:200],
+                }
+
+        # Build conflict details
+        conflict_details = []
+        for c in conflicts:
+            conflict_details.append({
+                "type": c.type,
+                "severity": c.severity,
+                "title": c.title,
+                "details": c.details[:300],
+                "contracts": c.contracts,
+            })
+
+        # Load prompt and call LLM
+        system_prompt = self.memory.read_file("prompts/conflict_resolution.md") or ""
+        user_message = json.dumps({
+            "contract_id": contract_id,
+            "conflicts": conflict_details,
+            "contract_contents": contract_snippets,
+            "hint": hint,
+        }, ensure_ascii=False, indent=2)
+
+        response = self.llm.call_heavy(system_prompt, user_message, max_tokens=1500)
+
+        # Parse response
+        text = response.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            text = "\n".join(lines)
+
+        try:
+            result = json.loads(text)
+        except json.JSONDecodeError:
+            import re
+            m = re.search(r'\{.*\}', response, re.DOTALL)
+            if m:
+                result = json.loads(m.group())
+            else:
+                return None
+
+        options = result.get("options", [])
+        if not options or not isinstance(options, list):
+            return None
+
+        return result
+
+    def _save_resolution_options(self, contract_id: str, options: list, stakeholders: list):
+        """Save generated resolution options into the discussion JSON."""
+        try:
+            discussion = self.memory.get_discussion(contract_id) or {}
+            discussion["resolution_options"] = [
+                {"index": i + 1, "title": opt.get("title", "")}
+                for i, opt in enumerate(options[:3])
+            ]
+            discussion["stakeholder_votes"] = {s: None for s in stakeholders}
+            discussion["resolution_status"] = "voting"
+            self.memory.update_discussion(contract_id, discussion)
+        except Exception as e:
+            logger.warning("Failed to save resolution options for %s: %s", contract_id, e)
 
     def _partial_fix(self, action: dict, initiative: dict) -> dict | None:
         """Propose a fix for a specific section of a contract."""

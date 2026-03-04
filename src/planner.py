@@ -493,12 +493,27 @@ class ContinuousPlanner:
 
         conflicts_summary = []
         for conflict in gathered.get("conflicts", [])[:10]:
-            conflicts_summary.append({
+            entry = {
                 "type": conflict.type,
                 "severity": conflict.severity,
                 "title": conflict.title,
                 "contracts": conflict.contracts,
-            })
+                "details": (conflict.details or "")[:200],
+            }
+            # Add contract snippets for conflict resolution context
+            snippets = {}
+            for cid in conflict.contracts:
+                md = self.memory.get_contract(cid) or self.memory.get_draft(cid) or ""
+                if md:
+                    from src.contract_summary import _extract_sections
+                    sections = _extract_sections(md)
+                    snippets[cid] = {
+                        "formula": (sections.get("Формула", "") or "")[:100],
+                        "definition": (sections.get("Определение", "") or "")[:100],
+                    }
+            if snippets:
+                entry["contract_snippets"] = snippets
+            conflicts_summary.append(entry)
 
         user_message = json.dumps({
             "candidates": candidates_summary,
