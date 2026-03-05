@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DAAI Dashboard</title>
-    <link rel="stylesheet" href="static/style.css">
+    <link rel="stylesheet" href="static/style.css?v=2">
 </head>
 <body>
     <header>
@@ -95,6 +95,17 @@
         </section>
     </main>
 
+    <!-- Delete confirmation dialog -->
+    <div id="confirm-overlay" class="modal-overlay" style="display:none">
+        <div class="modal-content" style="max-width:400px;text-align:center">
+            <p id="confirm-text" style="margin:0 0 20px;font-size:15px"></p>
+            <div style="display:flex;gap:12px;justify-content:center">
+                <button id="confirm-ok" class="btn-danger">Delete</button>
+                <button onclick="closeConfirm()" style="padding:8px 20px">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Contract detail modal -->
     <div id="modal-overlay" class="modal-overlay" style="display:none" onclick="closeModal(event)">
         <div class="modal-content">
@@ -103,6 +114,6 @@
         </div>
     </div>
 
-    <script src="static/app.js"></script>
+    <script src="static/app.js?v=2"></script>
 </body>
 </html>

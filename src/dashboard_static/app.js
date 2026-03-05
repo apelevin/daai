@@ -138,21 +138,37 @@ function closeModal(event) {
     }
 }
 
-async function deleteContract(contractId, event) {
+function deleteContract(contractId, event) {
     event.stopPropagation();
-    if (!confirm("Delete contract \"" + contractId + "\"? This will remove it from the index and delete associated files.")) return;
-    try {
-        const resp = await fetch(API + "/api/contracts/" + encodeURIComponent(contractId), { method: "DELETE" });
-        if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            alert("Delete failed: " + (err.detail || resp.statusText));
-            return;
+    showConfirm(
+        `Удалить контракт "${contractId}"?`,
+        async () => {
+            try {
+                const resp = await fetch(API + "/api/contracts/" + encodeURIComponent(contractId), { method: "DELETE" });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    showConfirm("Ошибка: " + (err.detail || resp.statusText), null);
+                    return;
+                }
+                refreshAll();
+            } catch (e) {
+                console.error("Delete contract failed:", e);
+            }
         }
-        refreshAll();
-    } catch (e) {
-        console.error("Delete contract failed:", e);
-        alert("Delete failed: " + e.message);
-    }
+    );
+}
+
+function showConfirm(text, onOk) {
+    const overlay = document.getElementById("confirm-overlay");
+    document.getElementById("confirm-text").textContent = text;
+    const btn = document.getElementById("confirm-ok");
+    btn.style.display = onOk ? "" : "none";
+    btn.onclick = () => { closeConfirm(); onOk && onOk(); };
+    overlay.style.display = "flex";
+}
+
+function closeConfirm() {
+    document.getElementById("confirm-overlay").style.display = "none";
 }
 
 // ── Metrics tree ─────────────────────────────────────────────────────────────

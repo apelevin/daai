@@ -190,6 +190,8 @@ tbody tr.clickable { cursor: pointer; }
 }
 .btn-small:hover { background: var(--border); color: var(--text); }
 .btn-small:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger { background: var(--red); color: #fff; border: none; padding: 8px 20px; border-radius: var(--radius); cursor: pointer; font-size: 14px; }
+.btn-danger:hover { opacity: 0.85; }
 
 /* Planner run banner */
 .planner-run-banner {
