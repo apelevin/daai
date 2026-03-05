@@ -15,7 +15,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, Response
 
 from src.config import DASHBOARD_HOST, DASHBOARD_PORT
 from src.memory import Memory
@@ -63,7 +63,9 @@ def create_app(memory: Memory | None = None, planner=None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Not found")
         media_types = {".css": "text/css", ".js": "application/javascript", ".html": "text/html"}
         media = media_types.get(full.suffix, "application/octet-stream")
-        return FileResponse(str(full), media_type=media)
+        resp = FileResponse(str(full), media_type=media)
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
 
     # ── API: Overview ────────────────────────────────────────────────────
     @app.get("/api/overview")
