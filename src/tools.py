@@ -835,23 +835,41 @@ class ToolExecutor:
             try:
                 client.initialize()
                 objects = client.list_objects(schema="ai_bi")
+                # objects is a list — each item may be a table name string or dict
+                tables = []
+                for obj in objects:
+                    if isinstance(obj, str):
+                        table_name = obj
+                        description = ""
+                        columns = []
+                    elif isinstance(obj, dict):
+                        table_name = (obj.get("table") or obj.get("name")
+                                      or obj.get("object_name") or "")
+                        description = obj.get("description") or obj.get("comment") or ""
+                        columns = obj.get("columns") or []
+                    else:
+                        continue
+                    if not table_name:
+                        continue
+                    # If no columns yet, fetch details
+                    if not columns and table_name:
+                        try:
+                            details = client.get_object_details("ai_bi", table_name)
+                            columns = details.get("columns") or []
+                            if not description:
+                                description = details.get("description") or details.get("comment") or ""
+                        except Exception:
+                            pass
+                    tables.append({
+                        "table": table_name,
+                        "description": description,
+                        "columns": columns,
+                    })
             finally:
                 client.close()
         except MCPError as e:
             return {"error": f"MCP недоступен: {e}"}
 
-        tables = []
-        for obj in objects:
-            if not isinstance(obj, dict):
-                continue
-            table_name = obj.get("table") or obj.get("name") or ""
-            description = obj.get("description") or ""
-            columns = obj.get("columns") or []
-            tables.append({
-                "table": table_name,
-                "description": description,
-                "columns": columns,
-            })
         return {"schema": "ai_bi", "tables": tables, "table_count": len(tables)}
 
     def _tool_query_data(self, sql: str, description: str = "") -> dict:

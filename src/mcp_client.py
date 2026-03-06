@@ -176,6 +176,15 @@ class MCPClient:
             pass
         return result or {}
 
+    def get_object_details(self, schema: str, object_name: str, object_type: str = "table") -> dict:
+        """Get detailed column info for a specific table/view."""
+        result = self._call("tools/call", {
+            "name": "get_object_details",
+            "arguments": {"schema_name": schema, "object_name": object_name, "object_type": object_type},
+        })
+        rows = _parse_tool_result(result)
+        return rows[0] if rows else {}
+
     def list_objects(self, schema: str = "ai_bi") -> list[dict]:
         """List tables and columns in the given schema.
 
@@ -183,7 +192,7 @@ class MCPClient:
         """
         result = self._call("tools/call", {
             "name": "list_objects",
-            "arguments": {"schema": schema},
+            "arguments": {"schema_name": schema},
         })
         return _parse_tool_result(result)
 
