@@ -23,6 +23,37 @@ def _tool(name: str, description: str, parameters: dict) -> dict:
     }
 
 
+# ── Data query tools (MCP/PostgreSQL) ────────────────────────────────────────
+
+DATA_QUERY_TOOLS: list[dict] = [
+    _tool(
+        "explore_schema",
+        "Возвращает список таблиц и колонок в схеме ai_bi из PostgreSQL. "
+        "Используй для поиска нужной таблицы перед написанием SQL.",
+        {"properties": {}, "required": []},
+    ),
+    _tool(
+        "query_data",
+        "Выполняет SELECT-запрос в PostgreSQL (схема ai_bi, read-only). "
+        "Всегда добавляй LIMIT (максимум 500). Запрещены: INSERT/UPDATE/DELETE/DDL/CROSS JOIN. "
+        "Возвращает {rows: [...], columns: [...], row_count: N} или {error: ...}.",
+        {
+            "properties": {
+                "sql": {
+                    "type": "string",
+                    "description": "SQL SELECT-запрос. Таблицы только из схемы ai_bi. Обязателен LIMIT.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Короткое описание что ищем (для логов)",
+                },
+            },
+            "required": ["sql"],
+        },
+    ),
+]
+
+
 # ── Read-only tools ──────────────────────────────────────────────────────────
 
 READ_TOOLS: list[dict] = [
@@ -319,9 +350,14 @@ def get_write_tools() -> list[dict]:
     return list(WRITE_TOOLS)
 
 
+def get_data_query_tools() -> list[dict]:
+    """Return MCP/PostgreSQL data query tool definitions."""
+    return list(DATA_QUERY_TOOLS)
+
+
 def get_all_tools() -> list[dict]:
     """Return all tool definitions."""
-    return get_read_tools() + get_write_tools()
+    return get_read_tools() + get_write_tools() + get_data_query_tools()
 
 
 _GENERAL_TOOL_NAMES = {"read_contract", "read_draft", "list_contracts"}
@@ -334,6 +370,9 @@ def get_tools_for_route(route_type: str, is_channel: bool) -> list[dict]:
 
     if route_type == "general_question":
         return [t for t in READ_TOOLS if t["function"]["name"] in _GENERAL_TOOL_NAMES]
+
+    if route_type == "data_query":
+        return list(DATA_QUERY_TOOLS)
 
     # contract_discussion, new_contract_init, problem_report — full set
     tools = list(READ_TOOLS)

@@ -825,6 +825,76 @@ class ToolExecutor:
 
         return result
 
+    # ── Data query tools (MCP) ───────────────────────────────────────────
+
+    def _tool_explore_schema(self) -> dict:
+        """List tables and columns from ai_bi schema via MCP."""
+        from src.mcp_client import MCPClient, MCPError
+        try:
+            client = MCPClient()
+            try:
+                client.initialize()
+                objects = client.list_objects(schema="ai_bi")
+            finally:
+                client.close()
+        except MCPError as e:
+            return {"error": f"MCP недоступен: {e}"}
+
+        tables = []
+        for obj in objects:
+            if not isinstance(obj, dict):
+                continue
+            table_name = obj.get("table") or obj.get("name") or ""
+            description = obj.get("description") or ""
+            columns = obj.get("columns") or []
+            tables.append({
+                "table": table_name,
+                "description": description,
+                "columns": columns,
+            })
+        return {"schema": "ai_bi", "tables": tables, "table_count": len(tables)}
+
+    def _tool_query_data(self, sql: str, description: str = "") -> dict:
+        """Execute a SELECT query via MCP. Enforces safety rules."""
+        import re
+        sql_upper = sql.upper().strip()
+
+        # Safety checks
+        forbidden = ["INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "CREATE", "ALTER", "GRANT", "REVOKE"]
+        for kw in forbidden:
+            if re.search(rf"\b{kw}\b", sql_upper):
+                return {"error": f"Запрещённая операция: {kw}. Только SELECT."}
+
+        if "CROSS JOIN" in sql_upper:
+            return {"error": "CROSS JOIN запрещён."}
+
+        if "LIMIT" not in sql_upper:
+            return {"error": "Запрос должен содержать LIMIT (максимум 500)."}
+
+        # Check all table references are in ai_bi
+        # Warn if schema not specified (not a hard block — server enforces it)
+        from src.mcp_client import MCPClient, MCPError
+        try:
+            client = MCPClient()
+            try:
+                client.initialize()
+                rows = client.execute_sql(sql)
+            finally:
+                client.close()
+        except MCPError as e:
+            return {"error": f"MCP ошибка: {e}"}
+
+        if not isinstance(rows, list):
+            return {"error": "Неожиданный формат ответа от MCP", "raw": str(rows)[:500]}
+
+        columns = list(rows[0].keys()) if rows else []
+        logger.info("query_data: %s rows, sql=%s", len(rows), (description or sql)[:80])
+        return {
+            "rows": rows[:500],
+            "columns": columns,
+            "row_count": len(rows),
+        }
+
     def _tool_check_data_availability(self, contract_id: str, data_source_description: str) -> dict:
         """Check if tables mentioned in data_source_description exist in ai_bi schema."""
         from src.mcp_client import MCPClient, MCPError

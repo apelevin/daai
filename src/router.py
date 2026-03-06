@@ -32,7 +32,7 @@ def _slugify(text: str) -> str:
 CHEAP_TYPES = {"contract_request", "status_request", "irrelevant"}
 HEAVY_TYPES = {
     "contract_discussion", "problem_report", "new_contract_init",
-    "general_question", "profile_intro",
+    "general_question", "profile_intro", "data_query",
 }
 
 
