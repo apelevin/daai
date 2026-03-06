@@ -396,6 +396,15 @@ class ContinuousPlanner:
             if cid in active_initiative_ids:
                 continue
 
+            # Skip contracts with no actual file content (stub/empty entries)
+            has_file = (
+                self.memory.read_file(f"contracts/{cid}.md") or
+                self.memory.read_file(f"drafts/{cid}.md")
+            )
+            if not has_file:
+                logger.debug("Planner: skipping stub contract %s (no file)", cid)
+                continue
+
             updated = c.get("updated_at") or c.get("created_at", "")
             days_blocked = 0.0
             if updated:
