@@ -269,6 +269,22 @@ WRITE_TOOLS: list[dict] = [
         },
     ),
     _tool(
+        "check_data_availability",
+        "Проверяет наличие данных в PostgreSQL (схема ai_bi) для указанного источника данных. "
+        "Используй после того как в черновике заполнен раздел '## Источник данных'. "
+        "Возвращает {available: bool, tables_found: [...], tables_missing: [...], message: str}.",
+        {
+            "properties": {
+                "contract_id": {"type": "string", "description": "ID контракта"},
+                "data_source_description": {
+                    "type": "string",
+                    "description": "Описание источника данных из раздела '## Источник данных' контракта",
+                },
+            },
+            "required": ["contract_id", "data_source_description"],
+        },
+    ),
+    _tool(
         "ask_question",
         "Задаёт вопрос с вариантами ответа в канале. "
         "Тегает релевантных участников по компетенции (из circles.md). "

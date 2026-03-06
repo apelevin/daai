@@ -64,3 +64,7 @@ DASHBOARD_PORT = _int("DASHBOARD_PORT", 8050)
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
 LLM_TIMEOUT_SECONDS = _int("LLM_TIMEOUT_SECONDS", 120)
+
+# ── MCP ───────────────────────────────────────────────────────────────────────
+MCP_SSE_URL = os.environ.get("MCP_SSE_URL", "https://ibmdev.pravo.tech/sse")
+MCP_TIMEOUT_SECONDS = _int("MCP_TIMEOUT_SECONDS", 30)

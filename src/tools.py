@@ -28,6 +28,22 @@ from src.contract_summary import generate_summary
 logger = logging.getLogger(__name__)
 
 
+def _extract_section(markdown: str, section_name: str) -> str:
+    """Extract content of a markdown ## section by name."""
+    lines = (markdown or "").splitlines()
+    in_section = False
+    result: list[str] = []
+    for line in lines:
+        if line.strip().startswith("## ") and section_name.lower() in line.lower():
+            in_section = True
+            continue
+        if in_section:
+            if line.strip().startswith("## "):
+                break
+            result.append(line)
+    return "\n".join(result).strip()
+
+
 def _extract_contract_name(markdown: str) -> str | None:
     for line in (markdown or "").splitlines():
         line = line.strip()
@@ -544,7 +560,19 @@ class ToolExecutor:
             logger.warning("Failed to update draft summary for %s: %s", contract_id, e)
 
         logger.info("Saved draft: %s", contract_id)
-        return {"success": True, "contract_id": contract_id, "name": name}
+        result: dict = {"success": True, "contract_id": contract_id, "name": name}
+
+        # Auto-check data availability when "Источник данных" section is filled
+        data_source = _extract_section(content, "Источник данных")
+        if data_source and data_source.strip() not in ("", "TBD", "—", "-", "нет"):
+            try:
+                avail = self._tool_check_data_availability(contract_id, data_source)
+                if avail.get("error") is None:
+                    result["data_availability"] = avail
+            except Exception as e:
+                logger.warning("Auto MCP check failed for %s: %s", contract_id, e)
+
+        return result
 
     def _tool_update_discussion(self, contract_id: str, discussion: dict) -> dict:
         if not isinstance(discussion, dict):
@@ -795,6 +823,95 @@ class ToolExecutor:
         else:
             result["message"] = f"Осталось получить согласование: {', '.join(missing)}"
 
+        return result
+
+    def _tool_check_data_availability(self, contract_id: str, data_source_description: str) -> dict:
+        """Check if tables mentioned in data_source_description exist in ai_bi schema."""
+        from src.mcp_client import MCPClient, MCPError
+
+        # Step 1: get schema objects
+        try:
+            client = MCPClient()
+            try:
+                client.initialize()
+                objects = client.list_objects(schema="ai_bi")
+            finally:
+                client.close()
+        except MCPError as e:
+            logger.warning("MCP unavailable: %s", e)
+            return {"available": None, "error": f"MCP недоступен: {e}"}
+
+        # Build set of known table names
+        known_tables = {
+            (obj.get("table") or obj.get("name") or "").lower()
+            for obj in objects
+            if isinstance(obj, dict)
+        }
+
+        # Step 2: use LLM to extract table names from description (if available)
+        # Fall back to simple keyword matching
+        candidate_tables: list[str] = []
+        if self.llm:
+            try:
+                prompt = (
+                    f"Из описания источника данных извлеки имена таблиц или представлений PostgreSQL "
+                    f"(только имена, без схемы, по одному на строку).\n\n"
+                    f"Описание: {data_source_description}\n\n"
+                    f"Известные таблицы в схеме ai_bi: {', '.join(sorted(known_tables)) or 'нет данных'}\n\n"
+                    f"Ответь только списком имён таблиц (одно имя на строку). "
+                    f"Если таблицы не упомянуты, напиши «нет»."
+                )
+                resp = self.llm.complete(prompt, max_tokens=200)
+                for line in resp.splitlines():
+                    name = line.strip().strip("-").strip().lower()
+                    if name and name != "нет" and len(name) < 80:
+                        candidate_tables.append(name)
+            except Exception as e:
+                logger.warning("LLM extraction for MCP check failed: %s", e)
+
+        # If LLM not available or returned nothing, do simple word matching
+        if not candidate_tables:
+            import re
+            words = re.findall(r"\b[a-z_][a-z0-9_]{2,}\b", data_source_description.lower())
+            candidate_tables = [w for w in words if w in known_tables]
+
+        found = [t for t in candidate_tables if t in known_tables]
+        missing = [t for t in candidate_tables if t not in known_tables]
+
+        available = len(missing) == 0 if candidate_tables else None
+
+        result = {
+            "available": available,
+            "tables_found": found,
+            "tables_missing": missing,
+            "total_tables_in_schema": len(known_tables),
+        }
+
+        if not candidate_tables:
+            result["message"] = (
+                "Не удалось определить конкретные таблицы из описания источника данных. "
+                "Проверь вручную или уточни источник."
+            )
+        elif missing:
+            result["message"] = (
+                f"⚠️ Таблицы не найдены в ai_bi: {', '.join(missing)}. "
+                f"Возможно, данные ещё не загружены."
+            )
+            # Post warning to Mattermost thread if connected
+            if self.mm and self.thread_root_id:
+                warning = (
+                    f"⚠️ Проверка данных для контракта `{contract_id}`:\n"
+                    f"Таблицы не найдены в схеме `ai_bi`: `{'`, `'.join(missing)}`\n"
+                    f"Данные необходимо подготовить до финализации контракта."
+                )
+                try:
+                    self.mm.send_to_channel(warning, root_id=self.thread_root_id)
+                except Exception as e:
+                    logger.warning("Failed to post MCP warning: %s", e)
+        else:
+            result["message"] = f"✅ Все таблицы найдены в ai_bi: {', '.join(found)}."
+
+        logger.info("MCP availability check for %s: found=%s missing=%s", contract_id, found, missing)
         return result
 
     def _tool_set_contract_status(self, contract_id: str, status: str) -> dict:
