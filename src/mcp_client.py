@@ -212,19 +212,40 @@ class MCPClient:
 
 def _parse_tool_result(result: Any) -> list:
     """Extract content from MCP tool result."""
+    import ast
+
     if result is None:
         return []
     # MCP tools/call returns {content: [{type: "text", text: "..."}]}
     if isinstance(result, dict) and "content" in result:
         for item in result["content"]:
             if isinstance(item, dict) and item.get("type") == "text":
-                try:
-                    return json.loads(item["text"])
-                except (json.JSONDecodeError, KeyError):
-                    return [{"raw": item.get("text", "")}]
+                text = item.get("text", "")
+                return _parse_text(text)
     if isinstance(result, list):
         return result
     return [{"raw": str(result)}]
+
+
+def _parse_text(text: str) -> list:
+    """Parse text that may be JSON or Python repr."""
+    import ast
+    text = text.strip()
+    if not text:
+        return []
+    # Try JSON first
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, list) else [parsed]
+    except json.JSONDecodeError:
+        pass
+    # Try Python literal (handles single-quoted dicts/lists from postgres-mcp)
+    try:
+        parsed = ast.literal_eval(text)
+        return parsed if isinstance(parsed, list) else [parsed]
+    except Exception:
+        pass
+    return [{"raw": text}]
 
 
 def call_mcp_once(fn_name: str, **kwargs) -> list:
