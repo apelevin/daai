@@ -375,8 +375,22 @@ class Scheduler:
                     url = f"{mm_url.rstrip('/')}/{MATTERMOST_TEAM_NAME}/pl/{root_post_id}"
 
                 name = contract.get("name", contract_id)
+                # Get short summary for context
+                summaries = self.memory.get_summaries() or {}
+                summary_text = ""
+                if isinstance(summaries, dict):
+                    s = summaries.get(contract_id)
+                    if isinstance(s, dict):
+                        # Use definition (first ~100 chars) as one-liner
+                        defn = s.get("definition") or s.get("summary") or ""
+                        summary_text = defn[:120].rstrip() + ("…" if len(defn) > 120 else "")
+                    elif isinstance(s, str):
+                        summary_text = s[:120]
+
                 items.append({
+                    "contract_id": contract_id,
                     "name": name,
+                    "summary": summary_text,
                     "url": url,
                     "waiting_on": waiting_on,
                     "blocker": blocker if blocker else None,
@@ -404,25 +418,42 @@ def _extract_mentions(text: str) -> set[str]:
 def _format_open_questions_digest(items: list[dict]) -> str:
     """Format digest message from list of items.
 
-    Each item: {name, url, waiting_on, blocker}
+    Each item: {contract_id, name, summary, url, waiting_on, blocker}
     """
-    lines = ["### :clipboard: Дайджест открытых вопросов", ""]
+    lines = [":clipboard: **Дайджест открытых вопросов**", ""]
     for item in items:
         name = item["name"]
+        contract_id = item.get("contract_id", "")
+        summary = item.get("summary", "")
         url = item.get("url")
+
+        # Header: human name linked to thread (or plain), with id as hint
         if url:
-            lines.append(f"- **[{name}]({url})**")
+            header = f"**[{name}]({url})**"
         else:
-            lines.append(f"- **{name}**")
+            header = f"**{name}**"
+        if contract_id and contract_id != name:
+            header += f" (`{contract_id}`)"
+        lines.append(f"- {header}")
+
+        # One-line description of what the contract is about
+        if summary:
+            lines.append(f"  _{summary}_")
+
+        # Who we're waiting on — @mention them so they get notified
         waiting = item.get("waiting_on")
         if waiting:
-            mentions = ", ".join(f"@{u}" for u in sorted(waiting))
-            lines.append(f"  Ожидаем: {mentions}")
+            mentions = " ".join(f"@{u}" for u in sorted(waiting))
+            lines.append(f"  Ждём ответа: {mentions}")
+
+        # Blocker text
         blocker = item.get("blocker")
         if blocker:
-            lines.append(f"  Блокер: {blocker}")
+            lines.append(f"  ⚠️ {blocker}")
+
         lines.append("")
-    lines.append(f"_Всего контрактов с открытыми вопросами: {len(items)}_")
+
+    lines.append(f"_Контрактов с открытыми вопросами: {len(items)}_")
     return "\n".join(lines)
 
 

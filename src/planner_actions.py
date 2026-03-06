@@ -307,12 +307,22 @@ class ActionDispatcher:
         contract_id = action.get("contract_id", "")
         hint = action.get("message_hint", "")
         thread_id = initiative.get("thread_id")
+        stakeholders = initiative.get("stakeholders", [])
 
-        message = (
-            f":wrench: **Предложение по исправлению** (`{contract_id}`)\n\n"
-            f"{hint}\n\n"
-            f"Согласны с исправлением?"
-        )
+        # Resolve human-readable contract name
+        contract_name = contract_id
+        for c in (self.memory.list_contracts() or []):
+            if isinstance(c, dict) and str(c.get("id", "")).lower() == contract_id.lower():
+                contract_name = c.get("name") or contract_id
+                break
+
+        mentions = " ".join(f"@{s}" for s in stakeholders) if stakeholders else ""
+
+        message = f":wrench: **{contract_name}** — нужно доработать\n\n{hint}"
+        if mentions:
+            message += f"\n\n{mentions}, ваш ответ?"
+        else:
+            message += "\n\nСогласны с исправлением?"
 
         resp = self.mm.send_to_channel(message, root_id=thread_id)
         return {
