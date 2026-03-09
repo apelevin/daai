@@ -172,9 +172,9 @@ class TestPlannerDatamartAction(unittest.TestCase):
 
 
 class TestGetDataLead(unittest.TestCase):
-    """Test _get_data_lead helper."""
+    """Test _get_data_leads helper."""
 
-    def test_finds_data_lead_from_tasks_roles(self):
+    def test_finds_all_data_leads_from_tasks_roles(self):
         from src.planner_actions import ActionDispatcher
 
         mem = FakeMemory()
@@ -183,8 +183,8 @@ class TestGetDataLead(unittest.TestCase):
         })
 
         dispatcher = ActionDispatcher(mem, MagicMock(), FakeLLM())
-        lead = dispatcher._get_data_lead()
-        self.assertEqual(lead, "data_user1")
+        leads = dispatcher._get_data_leads()
+        self.assertEqual(leads, ["data_user1", "data_user2"])
 
     def test_finds_data_lead_from_context_roles(self):
         from src.planner_actions import ActionDispatcher
@@ -195,18 +195,18 @@ class TestGetDataLead(unittest.TestCase):
         })
 
         dispatcher = ActionDispatcher(mem, MagicMock(), FakeLLM())
-        lead = dispatcher._get_data_lead()
-        self.assertEqual(lead, "context_user")
+        leads = dispatcher._get_data_leads()
+        self.assertEqual(leads, ["context_user"])
 
-    def test_returns_none_when_no_roles(self):
+    def test_returns_empty_when_no_roles(self):
         from src.planner_actions import ActionDispatcher
 
         mem = FakeMemory()
         dispatcher = ActionDispatcher(mem, MagicMock(), FakeLLM())
-        lead = dispatcher._get_data_lead()
-        self.assertIsNone(lead)
+        leads = dispatcher._get_data_leads()
+        self.assertEqual(leads, [])
 
-    def test_returns_none_when_empty_data_lead(self):
+    def test_returns_empty_when_empty_data_lead(self):
         from src.planner_actions import ActionDispatcher
 
         mem = FakeMemory()
@@ -215,8 +215,8 @@ class TestGetDataLead(unittest.TestCase):
         })
 
         dispatcher = ActionDispatcher(mem, MagicMock(), FakeLLM())
-        lead = dispatcher._get_data_lead()
-        self.assertIsNone(lead)
+        leads = dispatcher._get_data_leads()
+        self.assertEqual(leads, [])
 
 
 if __name__ == "__main__":

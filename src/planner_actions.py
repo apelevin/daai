@@ -401,9 +401,13 @@ class ActionDispatcher:
         if not spec:
             return None
 
-        # Find data lead to mention
-        data_lead = self._get_data_lead()
-        mention = f"\n\n@{data_lead}, прошу ознакомиться и взять в работу." if data_lead else ""
+        # Find data leads to mention
+        data_leads = self._get_data_leads()
+        if data_leads:
+            mentions = ", ".join(f"@{u}" for u in data_leads)
+            mention = f"\n\n{mentions}, прошу ознакомиться и взять в работу."
+        else:
+            mention = ""
 
         spec_preview = spec[:3000]
         message = (
@@ -420,8 +424,8 @@ class ActionDispatcher:
             "contract_id": contract_id,
         }
 
-    def _get_data_lead(self) -> str | None:
-        """Get the data lead username from roles."""
+    def _get_data_leads(self) -> list[str]:
+        """Get all data lead usernames from roles."""
         for path in ("tasks/roles.json", "context/roles.json"):
             data = self.memory.read_json(path)
             if isinstance(data, dict):
@@ -429,5 +433,5 @@ class ActionDispatcher:
                 if isinstance(roles, dict):
                     leads = roles.get("data_lead", [])
                     if isinstance(leads, list) and leads:
-                        return str(leads[0])
-        return None
+                        return [str(u) for u in leads]
+        return []
