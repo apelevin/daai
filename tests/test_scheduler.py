@@ -275,7 +275,7 @@ class TestFormatOpenQuestionsDigest:
         assert "@alice" in msg
         assert "@bob" in msg
         assert "Нет данных по SLA" in msg
-        assert "Всего контрактов с открытыми вопросами: 1" in msg
+        assert "Контрактов с открытыми вопросами: 1" in msg
 
     def test_no_url(self):
         items = [{"name": "Contract B", "url": None, "waiting_on": set(), "blocker": None}]
@@ -289,7 +289,7 @@ class TestFormatOpenQuestionsDigest:
             {"name": "C2", "url": None, "waiting_on": {"bob"}, "blocker": "blocked"},
         ]
         msg = _format_open_questions_digest(items)
-        assert "Всего контрактов с открытыми вопросами: 2" in msg
+        assert "Контрактов с открытыми вопросами: 2" in msg
 
 
 class TestOpenQuestionsDigest:

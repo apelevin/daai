@@ -205,16 +205,15 @@ def route(llm_client, memory, username: str, message: str,
     if is_direct_address and any(kw in low for kw in _OPINION_KEYWORDS):
         # Try to extract contract_id from message or thread context
         entity = None
-        cid_match = re.search(r"\b([a-z][a-z0-9_]{2,})\b", message, re.IGNORECASE)
-        if cid_match:
+        skip = {"финист", "ясный", bot_username, bot_display, "контракт", "метрик", "данных"}
+        for cid_match in re.finditer(r"\b([a-z][a-z0-9_]{2,})\b", message, re.IGNORECASE):
             candidate = cid_match.group(1).lower()
-            # Avoid matching common words or bot name
-            skip = {"финист", "ясный", bot_username, bot_display, "контракт", "метрик", "данных"}
             if candidate not in skip:
                 entity = candidate
+                break
         # Also try finding contract_id in thread context
         if not entity and thread_context:
-            tc_match = re.search(r"контракт[а]?\s*[:`]?\s*([a-z][a-z0-9_]{2,})", thread_context, re.IGNORECASE)
+            tc_match = re.search(r"контракт\w*\s*[:`]?\s*([a-z][a-z0-9_]{2,})", thread_context, re.IGNORECASE)
             if tc_match:
                 entity = tc_match.group(1).lower()
 
