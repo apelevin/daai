@@ -337,6 +337,21 @@ WRITE_TOOLS: list[dict] = [
             "required": ["question", "options"],
         },
     ),
+    _tool(
+        "generate_datamart_spec",
+        "Генерирует техническое задание на создание витрины данных из контракта. "
+        "Включает DDL, SQL-заготовку, маппинг на существующие таблицы ai_bi и проверки качества. "
+        "Результат сохраняется в specs/{contract_id}_datamart.md.",
+        {
+            "properties": {
+                "contract_id": {
+                    "type": "string",
+                    "description": "ID контракта, для которого генерируется витрина",
+                },
+            },
+            "required": ["contract_id"],
+        },
+    ),
 ]
 
 

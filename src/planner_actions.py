@@ -48,6 +48,7 @@ class ActionDispatcher:
             "partial_fix": self._partial_fix,
             "follow_up": self._follow_up,
             "escalate": self._escalate,
+            "generate_datamart_spec": self._generate_datamart_spec,
         }.get(action_type)
 
         if not handler:
@@ -382,3 +383,51 @@ class ActionDispatcher:
             "contract_id": contract_id,
             "escalated_to": escalation_user,
         }
+
+    def _generate_datamart_spec(self, action: dict, initiative: dict) -> dict | None:
+        """Generate and post a datamart specification for an agreed contract."""
+        contract_id = action.get("contract_id", "")
+        thread_id = initiative.get("thread_id")
+
+        from src.tools import ToolExecutor
+        executor = ToolExecutor(self.memory, self.mm, self.llm, thread_root_id=thread_id)
+        result = executor._tool_generate_datamart_spec(contract_id)
+
+        if result.get("error"):
+            logger.warning("Datamart spec generation failed for %s: %s", contract_id, result["error"])
+            return None
+
+        spec = result.get("spec", "")
+        if not spec:
+            return None
+
+        # Find data lead to mention
+        data_lead = self._get_data_lead()
+        mention = f"\n\n@{data_lead}, прошу ознакомиться и взять в работу." if data_lead else ""
+
+        spec_preview = spec[:3000]
+        message = (
+            f"Техзадание на витрину данных для контракта `{contract_id}` "
+            f"сгенерировано и сохранено в `specs/{contract_id}_datamart.md`.\n\n"
+            f"```markdown\n{spec_preview}\n```{mention}"
+        )
+
+        resp = self.mm.send_to_channel(message, root_id=thread_id)
+        return {
+            "action": "generate_datamart_spec",
+            "at": datetime.now(timezone.utc).isoformat(),
+            "post_id": resp.get("id", ""),
+            "contract_id": contract_id,
+        }
+
+    def _get_data_lead(self) -> str | None:
+        """Get the data lead username from roles."""
+        for path in ("tasks/roles.json", "context/roles.json"):
+            data = self.memory.read_json(path)
+            if isinstance(data, dict):
+                roles = data.get("roles", {})
+                if isinstance(roles, dict):
+                    leads = roles.get("data_lead", [])
+                    if isinstance(leads, list) and leads:
+                        return str(leads[0])
+        return None

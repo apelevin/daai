@@ -27,7 +27,7 @@ class ToolDefinitionsTest(unittest.TestCase):
         self.assertEqual(len(get_read_tools()), 11)
 
     def test_write_tools_count(self):
-        self.assertEqual(len(get_write_tools()), 11)
+        self.assertEqual(len(get_write_tools()), 13)
 
     def test_required_params_are_in_properties(self):
         for tool in get_all_tools():
@@ -52,6 +52,7 @@ class ToolDefinitionsTest(unittest.TestCase):
             "add_reminder", "update_participant", "save_decision",
             "assign_role", "set_contract_status",
             "request_approval", "approve_contract", "ask_question",
+            "check_data_availability", "generate_datamart_spec",
         }
         read_names = {t["function"]["name"] for t in get_read_tools()}
         write_names = {t["function"]["name"] for t in get_write_tools()}

@@ -388,6 +388,34 @@ class ContinuousPlanner:
                     conflict_ids=[c.type for c in [conflict]],
                 ))
 
+        # Agreed contracts without datamart spec → datamart_needed candidates
+        for c in contracts:
+            cid = c.get("id", "")
+            if c.get("status") != "agreed":
+                continue
+            if cid in active_initiative_ids:
+                continue
+
+            # Check if spec already exists
+            spec_exists = self.memory.read_file(f"specs/{cid}_datamart.md")
+            if spec_exists:
+                continue
+
+            score, breakdown = compute_priority_score(
+                priority=queue_map.get(cid),
+                stakeholder_available=True,
+                is_in_progress=False,
+            )
+            # Boost score for agreed contracts needing specs
+            score += 15.0
+            candidates.append(ScoredCandidate(
+                contract_id=cid,
+                metric_name=c.get("name", cid),
+                score=score,
+                breakdown={**breakdown, "datamart_boost": 15.0},
+                candidate_type="datamart_needed",
+            ))
+
         # Stale reviews → stale_review candidates
         for c in contracts:
             cid = c.get("id", "")

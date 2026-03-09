@@ -515,6 +515,22 @@ class ToolExecutor:
         except Exception:
             pass
 
+        # Best-effort: auto-generate datamart spec for agreed contract
+        try:
+            spec_result = self._tool_generate_datamart_spec(contract_id)
+            if spec_result.get("success") and spec_result.get("spec"):
+                spec_preview = spec_result["spec"][:3000]
+                if self.mm and self.thread_root_id:
+                    self.mm.send_to_channel(
+                        f"Техзадание на витрину для `{contract_id}` сгенерировано "
+                        f"и сохранено в `specs/{contract_id}_datamart.md`.\n\n"
+                        f"```markdown\n{spec_preview}\n```",
+                        root_id=self.thread_root_id,
+                    )
+                warnings.append(f"Техзадание на витрину сгенерировано: specs/{contract_id}_datamart.md")
+        except Exception as e:
+            logger.warning("Auto datamart spec failed for %s: %s", contract_id, e)
+
         # Best-effort: suggest next contract (proactive)
         try:
             from src.suggestion_engine import SuggestionEngine
@@ -949,7 +965,10 @@ class ToolExecutor:
                     f"Ответь только списком имён таблиц (одно имя на строку). "
                     f"Если таблицы не упомянуты, напиши «нет»."
                 )
-                resp = self.llm.complete(prompt, max_tokens=200)
+                resp = self.llm.call_cheap(
+                    "Извлеки имена таблиц PostgreSQL из описания источника данных.",
+                    prompt,
+                )
                 for line in resp.splitlines():
                     name = line.strip().strip("-").strip().lower()
                     if name and name != "нет" and len(name) < 80:
@@ -975,16 +994,33 @@ class ToolExecutor:
             "total_tables_in_schema": len(known_tables),
         }
 
+        # Auto-suggest similar tables when some are missing
+        suggested_tables: list[str] = []
+        if missing and known_tables:
+            import re as _re
+            # Extract meaningful keywords from missing table names
+            keywords = set()
+            for m_tbl in missing:
+                keywords.update(_re.findall(r"[a-z]{3,}", m_tbl.lower()))
+            suggested_tables = sorted([
+                t for t in known_tables
+                if any(kw in t for kw in keywords)
+            ])[:5]
+
         if not candidate_tables:
             result["message"] = (
                 "Не удалось определить конкретные таблицы из описания источника данных. "
                 "Проверь вручную или уточни источник."
             )
         elif missing:
-            result["message"] = (
-                f"⚠️ Таблицы не найдены в ai_bi: {', '.join(missing)}. "
+            msg = (
+                f"Таблицы не найдены в ai_bi: {', '.join(missing)}. "
                 f"Возможно, данные ещё не загружены."
             )
+            if suggested_tables:
+                msg += f" Похожие таблицы в ai_bi: {', '.join(suggested_tables)}."
+                result["suggested_tables"] = suggested_tables
+            result["message"] = msg
             # Post warning to Mattermost thread if connected
             if self.mm and self.thread_root_id:
                 warning = (
@@ -1001,6 +1037,86 @@ class ToolExecutor:
 
         logger.info("MCP availability check for %s: found=%s missing=%s", contract_id, found, missing)
         return result
+
+    def _tool_generate_datamart_spec(self, contract_id: str) -> dict:
+        """Generate a datamart specification from a contract."""
+        # 1. Read contract content
+        content = self.memory.read_file(f"contracts/{contract_id}.md")
+        if not content:
+            content = self.memory.read_file(f"drafts/{contract_id}.md")
+        if not content:
+            return {"error": f"Контракт {contract_id} не найден"}
+
+        # 2. Extract key sections
+        definition = _extract_section(content, "Определение")
+        formula = _extract_section(content, "Формула")
+        granularity = _extract_section(content, "Гранулярность")
+        includes = _extract_section(content, "Включает")
+        excludes = _extract_section(content, "Исключения")
+        data_source = _extract_section(content, "Источник данных")
+        data_owner = _extract_section(content, "Ответственный за данные")
+        calc_owner = _extract_section(content, "Ответственный за расчёт")
+        related = _extract_section(content, "Связанные контракты")
+        name = _extract_contract_name(content) or contract_id
+
+        # 3. Query MCP for existing tables (best-effort)
+        tables_info = ""
+        try:
+            from src.mcp_client import MCPClient
+            client = MCPClient()
+            try:
+                client.initialize()
+                objects = client.list_objects(schema="ai_bi")
+                if objects:
+                    table_names = sorted(set(
+                        (obj.get("table") or obj.get("name") or "").lower()
+                        for obj in objects if isinstance(obj, dict)
+                    ))
+                    tables_info = f"Таблицы в ai_bi: {', '.join(table_names)}"
+            finally:
+                client.close()
+        except Exception as e:
+            logger.debug("MCP unavailable for datamart spec: %s", e)
+            tables_info = "MCP недоступен — таблицы ai_bi не удалось получить."
+
+        # 4. Build LLM prompt
+        spec_prompt = self.memory.read_file("prompts/datamart_spec.md") or ""
+        if not spec_prompt:
+            return {"error": "Шаблон prompts/datamart_spec.md не найден"}
+
+        contract_context = (
+            f"Contract ID: {contract_id}\n"
+            f"Название: {name}\n\n"
+            f"Определение:\n{definition or '(не указано)'}\n\n"
+            f"Формула:\n{formula or '(не указана)'}\n\n"
+            f"Гранулярность:\n{granularity or '(не указана)'}\n\n"
+            f"Включает:\n{includes or '(не указано)'}\n\n"
+            f"Исключения:\n{excludes or '(не указано)'}\n\n"
+            f"Источник данных:\n{data_source or '(не указан)'}\n\n"
+            f"Ответственный за данные: {data_owner or '(не указан)'}\n"
+            f"Ответственный за расчёт: {calc_owner or '(не указан)'}\n\n"
+            f"Связанные контракты:\n{related or '(нет)'}\n\n"
+            f"--- Данные DWH ---\n{tables_info}\n"
+        )
+
+        if not self.llm:
+            return {"error": "LLM клиент недоступен"}
+
+        spec = self.llm.call_heavy(spec_prompt, contract_context, max_tokens=4000)
+
+        if not spec or not spec.strip():
+            return {"error": "LLM вернул пустой результат"}
+
+        # 5. Save spec to file
+        self.memory.write_file(f"specs/{contract_id}_datamart.md", spec)
+
+        logger.info("Generated datamart spec for %s", contract_id)
+        return {
+            "success": True,
+            "contract_id": contract_id,
+            "spec_file": f"specs/{contract_id}_datamart.md",
+            "spec": spec,
+        }
 
     def _tool_set_contract_status(self, contract_id: str, status: str) -> dict:
         index = self.memory.read_json("contracts/index.json") or {"contracts": []}
