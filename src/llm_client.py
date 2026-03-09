@@ -7,7 +7,7 @@ from typing import Callable
 
 import openai
 
-from src.config import LLM_TIMEOUT_SECONDS
+from src.config import LLM_TIMEOUT_SECONDS, EXPERT_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +40,15 @@ class LLMClient:
         self.heavy_model = os.environ.get("HEAVY_MODEL", "anthropic/claude-sonnet-4")
         self.fallback_model = os.environ.get("FALLBACK_MODEL", "google/gemini-3-flash-preview")
 
+        self.expert_model = EXPERT_MODEL
+
         self.client = openai.OpenAI(
             base_url=base_url,
             api_key=api_key,
             timeout=LLM_TIMEOUT_SECONDS,
         )
         self.log_costs = os.environ.get("LOG_LLM_COSTS", "true").lower() == "true"
-        logger.info("LLM client initialized: cheap=%s, heavy=%s, fallback=%s, timeout=%ds", self.cheap_model, self.heavy_model, self.fallback_model, LLM_TIMEOUT_SECONDS)
+        logger.info("LLM client initialized: cheap=%s, heavy=%s, expert=%s, fallback=%s, timeout=%ds", self.cheap_model, self.heavy_model, self.expert_model, self.fallback_model, LLM_TIMEOUT_SECONDS)
 
     def call_cheap(self, system_prompt: str, user_message: str) -> str:
         """Fast cheap call for routing and simple responses."""
@@ -70,6 +72,17 @@ class LLMClient:
             label="heavy",
         )
 
+    def call_expert(self, system_prompt: str, user_message: str, max_tokens: int = 3000) -> str:
+        """Expert call using a separate model for analytical/advisory responses."""
+        return self._call(
+            model=self.expert_model,
+            system_prompt=system_prompt,
+            user_message=user_message,
+            max_tokens=max_tokens,
+            temperature=0.4,
+            label="expert",
+        )
+
     def call_with_tools(
         self,
         system_prompt: str,
@@ -79,6 +92,7 @@ class LLMClient:
         *,
         max_turns: int = 5,
         max_tokens: int = 4000,
+        model: str | None = None,
     ) -> str:
         """Agentic loop: LLM calls tools, gets results, generates final text.
 
@@ -89,10 +103,13 @@ class LLMClient:
             tool_executor: Callable(tool_name, args) -> dict result.
             max_turns: Maximum number of tool-calling rounds.
             max_tokens: Max tokens per LLM call.
+            model: Override model (default: self.heavy_model).
 
         Returns:
             Final text response from the LLM.
         """
+        active_model = model or self.heavy_model
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
@@ -101,7 +118,7 @@ class LLMClient:
         for turn in range(max_turns):
             try:
                 response = self.client.chat.completions.create(
-                    model=self.heavy_model,
+                    model=active_model,
                     messages=messages,
                     tools=tools if tools else openai.NOT_GIVEN,
                     max_tokens=max_tokens,
@@ -130,7 +147,7 @@ class LLMClient:
                 logger.info(
                     "LLM [tools turn=%d] model=%s prompt_tokens=%d completion_tokens=%d",
                     turn,
-                    self.heavy_model,
+                    active_model,
                     response.usage.prompt_tokens,
                     response.usage.completion_tokens,
                 )

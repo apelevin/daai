@@ -10,6 +10,8 @@ from src.memory import Memory
 
 
 class FakeLLM:
+    expert_model = "fake/expert"
+
     def call_cheap(self, system, user, **kw):
         return json.dumps({"type": "contract_discussion", "entity": "headcount"})
 

@@ -9,6 +9,8 @@ from src.router import route
 
 
 class FakeLLM:
+    expert_model = "fake/expert"
+
     def call_cheap(self, system, user, **kw):
         return "{}"
 

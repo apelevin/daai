@@ -6,7 +6,7 @@ import os
 import threading
 import time
 
-from src.config import DEDUP_TTL_SECONDS, DEDUP_MAX_ENTRIES
+from src.config import DEDUP_TTL_SECONDS, DEDUP_MAX_ENTRIES, RESPONSE_DEDUP_WINDOW_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,10 @@ class Listener:
         self._seen_post_ids = set()
         self._inflight_post_ids = set()
         self._dedup_lock = threading.Lock()
+
+        # Response dedup: prevent sending near-identical replies in the same thread
+        self._recent_replies: dict[str, tuple[float, str]] = {}
+        self._reply_dedup_lock = threading.Lock()
 
         # Load persisted dedup state
         self._load_seen_posts()
@@ -149,6 +153,29 @@ class Listener:
                         self._seen_post_ids = set(list(self._seen_post_ids)[-(DEDUP_MAX_ENTRIES // 2):])
                 self._persist_seen_post(post_id)
 
+    def _is_duplicate_reply(self, thread_root: str, reply: str) -> bool:
+        """Check if a near-identical reply was already sent to this thread recently."""
+        import hashlib
+        now = time.time()
+        reply_hash = hashlib.md5(reply.strip()[:500].encode()).hexdigest()
+
+        with self._reply_dedup_lock:
+            # Cleanup expired entries
+            cutoff = now - RESPONSE_DEDUP_WINDOW_SECONDS
+            self._recent_replies = {
+                k: v for k, v in self._recent_replies.items()
+                if v[0] > cutoff
+            }
+
+            key = thread_root
+            if key in self._recent_replies:
+                prev_ts, prev_hash = self._recent_replies[key]
+                if prev_hash == reply_hash:
+                    return True
+
+            self._recent_replies[key] = (now, reply_hash)
+            return False
+
     def _process_posted(self, post_id, root_id, user_id, channel_id, message, data):
         """Process a posted event after dedup. Called from _handle_posted."""
         # Get username
@@ -274,15 +301,21 @@ class Listener:
         if not reply:
             return
 
-        # Send reply
+        # Send reply (with dedup check)
         try:
             if channel_type == "dm":
                 dm_thread_root = root_id or post_id
+                if self._is_duplicate_reply(dm_thread_root, reply):
+                    logger.info("Suppressed duplicate DM reply in thread %s", dm_thread_root)
+                    return
                 logger.info("Sending DM reply to user_id=%s (post_id=%s) root=%s len=%s", user_id, post_id, dm_thread_root, len(reply))
                 self.mm.send_dm(user_id, reply, root_id=dm_thread_root)
             else:
                 # Reply in thread: prefer active thread from agent, then original root, then this post
                 thread_root = (result.thread_root_id if result else None) or root_id or post_id
+                if self._is_duplicate_reply(thread_root, reply):
+                    logger.info("Suppressed duplicate channel reply in thread %s", thread_root)
+                    return
                 logger.info(
                     "Sending channel reply root=%s (inbound post_id=%s) len=%s preview=%r",
                     thread_root,

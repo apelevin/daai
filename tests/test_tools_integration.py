@@ -117,6 +117,7 @@ class ToolUseLLM:
         self.tool_calls_log: list[tuple[str, dict]] = []
         self.cheap_model = "fake/cheap"
         self.heavy_model = "fake/heavy"
+        self.expert_model = "fake/expert"
 
     def call_cheap(self, system, user, **kw):
         return json.dumps({
@@ -129,7 +130,7 @@ class ToolUseLLM:
     def call_heavy(self, system, user, **kw):
         return "(fake heavy)"
 
-    def call_with_tools(self, system_prompt, user_message, tools, tool_executor, *, max_turns=5, max_tokens=2000):
+    def call_with_tools(self, system_prompt, user_message, tools, tool_executor, *, max_turns=5, max_tokens=2000, model=None):
         """Execute scripted tool-calling scenario."""
         if not self.scenarios:
             return "(no more scenarios)"

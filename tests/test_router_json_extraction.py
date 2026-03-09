@@ -4,6 +4,8 @@ from src.router import route
 
 
 class FakeLLM:
+    expert_model = "fake/expert"
+
     def __init__(self, raw: str):
         self.raw = raw
 

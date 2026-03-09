@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+
+from src.config import BOT_DISPLAY_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +35,17 @@ def _slugify(text: str) -> str:
 CHEAP_TYPES = {"contract_request", "status_request", "irrelevant"}
 HEAVY_TYPES = {
     "contract_discussion", "problem_report", "new_contract_init",
-    "general_question", "profile_intro", "data_query",
+    "general_question", "profile_intro", "data_query", "expert_opinion",
 }
+
+# Keywords indicating user is asking for agent's expert opinion/analysis
+_OPINION_KEYWORDS = [
+    "как ты думаешь", "что ты думаешь", "твоё мнение", "твое мнение",
+    "оцени", "какие риски", "порекомендуй", "предложи", "проанализируй",
+    "твой анализ", "что скажешь", "какой подход", "экспертн",
+    "как эксперт", "твоя оценка", "твоя рекомендация", "как считаешь",
+    "на твой взгляд", "с твоей точки",
+]
 
 
 def route(llm_client, memory, username: str, message: str,
@@ -179,6 +191,38 @@ def route(llm_client, memory, username: str, message: str,
         ent = ",".join([f"{r}:{u}" for r, u in assignments])
         # Persist roles in tasks/roles.json (writable runtime state). context/roles.json is treated as read-only defaults.
         return {"type": "roles_assign", "entity": ent, "load_files": ["tasks/roles.json", "context/roles.json"], "model": "cheap"}
+
+    # ── Expert opinion detection: direct @mention of bot + opinion keywords ──
+    bot_username = os.environ.get("MATTERMOST_BOT_USERNAME", "").lower()
+    bot_display = BOT_DISPLAY_NAME.lower()
+    low = (message or "").lower()
+
+    is_direct_address = any(
+        f"@{name}" in low
+        for name in [bot_username, bot_display]
+        if name
+    )
+    if is_direct_address and any(kw in low for kw in _OPINION_KEYWORDS):
+        # Try to extract contract_id from message or thread context
+        entity = None
+        cid_match = re.search(r"\b([a-z][a-z0-9_]{2,})\b", message, re.IGNORECASE)
+        if cid_match:
+            candidate = cid_match.group(1).lower()
+            # Avoid matching common words or bot name
+            skip = {"финист", "ясный", bot_username, bot_display, "контракт", "метрик", "данных"}
+            if candidate not in skip:
+                entity = candidate
+        # Also try finding contract_id in thread context
+        if not entity and thread_context:
+            tc_match = re.search(r"контракт[а]?\s*[:`]?\s*([a-z][a-z0-9_]{2,})", thread_context, re.IGNORECASE)
+            if tc_match:
+                entity = tc_match.group(1).lower()
+
+        load = []
+        if entity:
+            load = [f"drafts/{entity}.md", f"drafts/{entity}_discussion.json",
+                    f"contracts/{entity}.md"]
+        return {"type": "expert_opinion", "entity": entity, "load_files": load, "model": "expert"}
 
     router_prompt = memory.read_file("prompts/router.md") or ""
 

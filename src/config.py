@@ -64,6 +64,11 @@ DASHBOARD_PORT = _int("DASHBOARD_PORT", 8050)
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
 LLM_TIMEOUT_SECONDS = _int("LLM_TIMEOUT_SECONDS", 120)
+EXPERT_MODEL = os.environ.get("EXPERT_MODEL", "openai/gpt-4.1")
+BOT_DISPLAY_NAME = os.environ.get("BOT_DISPLAY_NAME", "Финист")
+
+# ── Response dedup ────────────────────────────────────────────────────────────
+RESPONSE_DEDUP_WINDOW_SECONDS = _int("RESPONSE_DEDUP_WINDOW_SECONDS", 60)
 
 # ── MCP ───────────────────────────────────────────────────────────────────────
 MCP_SSE_URL = os.environ.get("MCP_SSE_URL", "https://ibmdev.pravo.tech/sse")

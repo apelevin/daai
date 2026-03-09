@@ -8,6 +8,8 @@ from src.memory import Memory
 
 
 class FakeLLM:
+    expert_model = "fake/expert"
+
     def call_cheap(self, *a, **kw):
         return "{}"
 

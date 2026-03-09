@@ -554,12 +554,27 @@ class Agent:
     ) -> str:
         """Process message using tool-use / function-calling path."""
         # Route-specific system prompt: full prompt only for heavy contract operations
-        _FULL_PROMPT_TYPES = {"contract_discussion", "new_contract_init", "problem_report"}
+        _FULL_PROMPT_TYPES = {"contract_discussion", "new_contract_init", "problem_report", "expert_opinion"}
 
         if route_data.get("type") in _FULL_PROMPT_TYPES:
             system_prompt = self.memory.read_file("prompts/system_full.md") or ""
         else:
             system_prompt = self.memory.read_file("prompts/system_short.md") or ""
+
+        # Expert opinion mode: append advisory instructions
+        if route_data.get("type") == "expert_opinion":
+            system_prompt += """
+
+# Режим экспертного мнения
+
+Пользователь напрямую обратился к тебе за твоим экспертным мнением. В этом режиме:
+- Ты ОТВЕЧАЕШЬ от своего лица как эксперт по метрикам, данным и аналитической архитектуре
+- Анализируй риски, предлагай подходы, давай обоснованные рекомендации
+- Опирайся на контекст обсуждения, загруженные контракты и свои знания
+- Используй аналитический, структурированный стиль
+- В конце подчёркивай: финальное решение за стейкхолдерами
+- Ограничение на 5 строк НЕ действует в этом режиме — отвечай настолько подробно, насколько требует вопрос
+"""
 
         # Load context files
         load_files = route_data.get("load_files", [])
@@ -616,11 +631,15 @@ class Agent:
 
         executor = ToolExecutor(self.memory, self.mm, self.llm, thread_root_id=thread_root_id)
 
+        # Use expert model for expert_opinion route
+        model_override = self.llm.expert_model if route_data.get("type") == "expert_opinion" else None
+
         reply = self.llm.call_with_tools(
             system_prompt=full_system,
             user_message=user_msg,
             tools=tools,
             tool_executor=executor.execute,
+            model=model_override,
         )
         self._enrich_participant_profile(
             username, message, route_data.get("type", ""), thread_context

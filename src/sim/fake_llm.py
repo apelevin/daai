@@ -13,6 +13,7 @@ class FakeLLMClient:
         self.heavy_rules = heavy_rules or []
         self.cheap_model = "fake/cheap"
         self.heavy_model = "fake/heavy"
+        self.expert_model = "fake/expert"
 
     def _tail(self, user_message: str) -> str:
         # Agent formats messages with "Новое сообщение:" when thread_context exists.

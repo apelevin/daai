@@ -374,6 +374,10 @@ def get_tools_for_route(route_type: str, is_channel: bool) -> list[dict]:
     if route_type == "data_query":
         return list(DATA_QUERY_TOOLS)
 
+    if route_type == "expert_opinion":
+        # Expert mode: read tools + data query for analysis, no write tools
+        return list(READ_TOOLS) + list(DATA_QUERY_TOOLS)
+
     # contract_discussion, new_contract_init, problem_report — full set
     tools = list(READ_TOOLS)
     if is_channel:

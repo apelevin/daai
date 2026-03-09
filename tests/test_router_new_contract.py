@@ -8,6 +8,8 @@ from src.router import route, _slugify
 
 
 class FakeLLM:
+    expert_model = "fake/expert"
+
     def __init__(self, raw: str):
         self.raw = raw
 
