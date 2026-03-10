@@ -129,7 +129,7 @@ class TestPlannerDatamartAction(unittest.TestCase):
 
         with patch("src.tools.ToolExecutor") as MockExecutor:
             mock_exec = MagicMock()
-            mock_exec._tool_generate_datamart_spec.return_value = {
+            mock_exec.execute.return_value = {
                 "success": True,
                 "contract_id": "contract_churn",
                 "spec": "# Datamart spec content",
@@ -156,7 +156,7 @@ class TestPlannerDatamartAction(unittest.TestCase):
 
         with patch("src.tools.ToolExecutor") as MockExecutor:
             mock_exec = MagicMock()
-            mock_exec._tool_generate_datamart_spec.return_value = {
+            mock_exec.execute.return_value = {
                 "error": "Контракт не найден",
             }
             MockExecutor.return_value = mock_exec

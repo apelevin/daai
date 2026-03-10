@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 
-from src.config import BOT_DISPLAY_NAME
+from src.config import BOT_DISPLAY_NAME, BOT_USERNAME
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +192,7 @@ def route(llm_client, memory, username: str, message: str,
         return {"type": "roles_assign", "entity": ent, "load_files": ["tasks/roles.json", "context/roles.json"], "model": "cheap"}
 
     # ── Expert opinion detection: direct @mention of bot + opinion keywords ──
-    bot_username = os.environ.get("MATTERMOST_BOT_USERNAME", "").lower()
+    bot_username = BOT_USERNAME.lower()
     bot_display = BOT_DISPLAY_NAME.lower()
     low = (message or "").lower()
 

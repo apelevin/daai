@@ -34,8 +34,15 @@ class TestExpertOpinionRouteDetection(unittest.TestCase):
             "BOT_DISPLAY_NAME": "Финист",
         })
         self.env_patch.start()
+        # Patch config constants already imported in router
+        self._p1 = patch("src.router.BOT_USERNAME", "finist")
+        self._p2 = patch("src.router.BOT_DISPLAY_NAME", "Финист")
+        self._p1.start()
+        self._p2.start()
 
     def tearDown(self):
+        self._p1.stop()
+        self._p2.stop()
         self.env_patch.stop()
 
     def test_direct_mention_with_opinion_keyword(self):

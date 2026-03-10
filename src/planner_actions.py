@@ -391,7 +391,7 @@ class ActionDispatcher:
 
         from src.tools import ToolExecutor
         executor = ToolExecutor(self.memory, self.mm, self.llm, thread_root_id=thread_id)
-        result = executor._tool_generate_datamart_spec(contract_id)
+        result = executor.execute("generate_datamart_spec", {"contract_id": contract_id})
 
         if result.get("error"):
             logger.warning("Datamart spec generation failed for %s: %s", contract_id, result["error"])

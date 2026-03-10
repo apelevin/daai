@@ -72,17 +72,6 @@ class LLMClient:
             label="heavy",
         )
 
-    def call_expert(self, system_prompt: str, user_message: str, max_tokens: int = 3000) -> str:
-        """Expert call using a separate model for analytical/advisory responses."""
-        return self._call(
-            model=self.expert_model,
-            system_prompt=system_prompt,
-            user_message=user_message,
-            max_tokens=max_tokens,
-            temperature=0.4,
-            label="expert",
-        )
-
     def call_with_tools(
         self,
         system_prompt: str,

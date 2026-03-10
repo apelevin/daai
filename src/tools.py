@@ -8,6 +8,7 @@ from __future__ import annotations
 import difflib
 import json
 import logging
+import re
 from datetime import datetime, timezone
 
 from src.validator import validate_contract
@@ -24,8 +25,32 @@ from src.relationships_llm import (
     parse_and_validate as parse_relationships_llm,
 )
 from src.contract_summary import generate_summary
+from src.config import BOT_USERNAME, BOT_DISPLAY_NAME
 
 logger = logging.getLogger(__name__)
+
+# Contract IDs that should never be created (bot identifiers, common words)
+_RESERVED_CONTRACT_IDS = frozenset()
+
+
+def _is_invalid_contract_id(contract_id: str) -> str | None:
+    """Return error message if contract_id is invalid, None if OK."""
+    if not contract_id or not contract_id.strip():
+        return "contract_id пустой"
+    cid = contract_id.strip().lower()
+    # Must be ASCII snake_case
+    if not re.match(r"^[a-z][a-z0-9_]{1,59}$", cid):
+        return f"contract_id '{contract_id}' невалидный — допустимы только латиница, цифры, подчёркивания (2-60 символов)"
+    # Must not match bot login/username/display name
+    bot_names = {n.lower() for n in [BOT_USERNAME, BOT_DISPLAY_NAME] if n}
+    # Also block the MATTERMOST_LOGIN value
+    import os
+    login = os.environ.get("MATTERMOST_LOGIN", "").lower()
+    if login:
+        bot_names.add(login)
+    if cid in bot_names:
+        return f"contract_id '{contract_id}' совпадает с именем бота — создание запрещено"
+    return None
 
 
 def _extract_section(markdown: str, section_name: str) -> str:
@@ -381,6 +406,9 @@ class ToolExecutor:
 
     def _tool_save_contract(self, contract_id: str, content: str, force: bool = False) -> dict:
         """Validate + governance + glossary + save. Returns structured result."""
+        err = _is_invalid_contract_id(contract_id)
+        if err:
+            return {"success": False, "contract_id": contract_id, "errors": [err], "warnings": []}
         errors: list[str] = []
         warnings: list[str] = []
 
@@ -515,22 +543,6 @@ class ToolExecutor:
         except Exception:
             pass
 
-        # Best-effort: auto-generate datamart spec for agreed contract
-        try:
-            spec_result = self._tool_generate_datamart_spec(contract_id)
-            if spec_result.get("success") and spec_result.get("spec"):
-                spec_preview = spec_result["spec"][:3000]
-                if self.mm and self.thread_root_id:
-                    self.mm.send_to_channel(
-                        f"Техзадание на витрину для `{contract_id}` сгенерировано "
-                        f"и сохранено в `specs/{contract_id}_datamart.md`.\n\n"
-                        f"```markdown\n{spec_preview}\n```",
-                        root_id=self.thread_root_id,
-                    )
-                warnings.append(f"Техзадание на витрину сгенерировано: specs/{contract_id}_datamart.md")
-        except Exception as e:
-            logger.warning("Auto datamart spec failed for %s: %s", contract_id, e)
-
         # Best-effort: suggest next contract (proactive)
         try:
             from src.suggestion_engine import SuggestionEngine
@@ -562,6 +574,9 @@ class ToolExecutor:
         }
 
     def _tool_save_draft(self, contract_id: str, content: str) -> dict:
+        err = _is_invalid_contract_id(contract_id)
+        if err:
+            return {"success": False, "error": err}
         self.memory.save_draft(contract_id, content)
         name = _extract_contract_name(content) or contract_id
         self.memory.update_contract_index(contract_id, {
@@ -890,7 +905,6 @@ class ToolExecutor:
 
     def _tool_query_data(self, sql: str, description: str = "") -> dict:
         """Execute a SELECT query via MCP. Enforces safety rules."""
-        import re
         sql_upper = sql.upper().strip()
 
         # Safety checks
@@ -978,7 +992,6 @@ class ToolExecutor:
 
         # If LLM not available or returned nothing, do simple word matching
         if not candidate_tables:
-            import re
             words = re.findall(r"\b[a-z_][a-z0-9_]{2,}\b", data_source_description.lower())
             candidate_tables = [w for w in words if w in known_tables]
 
@@ -997,11 +1010,10 @@ class ToolExecutor:
         # Auto-suggest similar tables when some are missing
         suggested_tables: list[str] = []
         if missing and known_tables:
-            import re as _re
             # Extract meaningful keywords from missing table names
             keywords = set()
             for m_tbl in missing:
-                keywords.update(_re.findall(r"[a-z]{3,}", m_tbl.lower()))
+                keywords.update(re.findall(r"[a-z]{3,}", m_tbl.lower()))
             suggested_tables = sorted([
                 t for t in known_tables
                 if any(kw in t for kw in keywords)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -155,7 +156,6 @@ class Listener:
 
     def _is_duplicate_reply(self, thread_root: str, reply: str) -> bool:
         """Check if a near-identical reply was already sent to this thread recently."""
-        import hashlib
         now = time.time()
         reply_hash = hashlib.md5(reply.strip()[:500].encode()).hexdigest()
 

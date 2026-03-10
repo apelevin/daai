@@ -66,6 +66,7 @@ DASHBOARD_PORT = _int("DASHBOARD_PORT", 8050)
 LLM_TIMEOUT_SECONDS = _int("LLM_TIMEOUT_SECONDS", 120)
 EXPERT_MODEL = os.environ.get("EXPERT_MODEL", "openai/gpt-4.1")
 BOT_DISPLAY_NAME = os.environ.get("BOT_DISPLAY_NAME", "Финист")
+BOT_USERNAME = os.environ.get("MATTERMOST_BOT_USERNAME", "")
 
 # ── Response dedup ────────────────────────────────────────────────────────────
 RESPONSE_DEDUP_WINDOW_SECONDS = _int("RESPONSE_DEDUP_WINDOW_SECONDS", 60)
