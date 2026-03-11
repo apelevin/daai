@@ -185,6 +185,36 @@ class TestCoverageScan:
         if win_ni:
             assert win_ni[0].priority == 1
 
+    def test_excludes_by_slugified_name(self, data_dir, memory):
+        """Contracts matched by slugified name (not just id) are excluded.
+
+        e.g. contract id='win_ni' with name='New Income' should exclude
+        the tree node 'New Income' whose slug is 'new_income' != 'win_ni'.
+        """
+        # Add contracts whose IDs don't match slugified tree node names
+        index = {
+            "contracts": [
+                {"id": "contract_churn", "name": "Contract Churn", "status": "agreed"},
+                {"id": "win_ni", "name": "New Income", "status": "agreed"},
+                {"id": "recurring_income", "name": "Recurring Income", "status": "draft"},
+            ]
+        }
+        (data_dir / "contracts" / "index.json").write_text(
+            json.dumps(index, ensure_ascii=False), encoding="utf-8"
+        )
+
+        engine = SuggestionEngine(memory)
+        candidates = engine.coverage_scan()
+        names = [c.metric_name for c in candidates]
+
+        # "New Income" should be excluded (matched via slugified name of win_ni)
+        assert "New Income" not in names, f"New Income should be excluded, got: {names}"
+        # "Recurring Income" should be excluded (matched via slugified name)
+        assert "Recurring Income" not in names, f"Recurring Income should be excluded, got: {names}"
+        # These genuinely have no contracts
+        assert "Usage Churn" in names
+        assert "Activation Rate" in names
+
 
 class TestFilterAlreadySuggested:
     def test_filters_recently_suggested(self, engine, memory):

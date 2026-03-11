@@ -237,11 +237,15 @@ class SuggestionEngine:
             return []
 
         # Exclude those already in index with active statuses
+        # Match by both contract ID and slugified contract name
         index = self.memory.list_contracts() or []
         active_ids = set()
         for c in index:
             if isinstance(c, dict) and c.get("status") in ("draft", "in_review", "approved", "active", "agreed"):
                 active_ids.add(str(c.get("id", "")).lower())
+                name = c.get("name", "")
+                if name:
+                    active_ids.add(_slugify_metric(name))
 
         queue = self.memory.get_queue()
         queue_map = {item["id"]: item.get("priority") for item in queue if isinstance(item, dict)}
