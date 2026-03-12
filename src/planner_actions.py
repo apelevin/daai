@@ -319,11 +319,11 @@ class ActionDispatcher:
 
         mentions = " ".join(f"@{s}" for s in stakeholders) if stakeholders else ""
 
-        message = f":wrench: **{contract_name}** — нужно доработать\n\n{hint}"
+        message = f"Обратил внимание на **{contract_name}**:\n\n{hint}\n\nПредлагаю исправить."
         if mentions:
-            message += f"\n\n{mentions}, ваш ответ?"
+            message += f" {mentions}, что думаете?"
         else:
-            message += "\n\nСогласны с исправлением?"
+            message += " Что думаете?"
 
         resp = self.mm.send_to_channel(message, root_id=thread_id)
         return {
